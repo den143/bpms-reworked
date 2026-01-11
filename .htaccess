@@ -1,0 +1,7 @@
+RewriteEngine On
+
+# 1. Redirect the root URL to the public folder
+RewriteRule ^$ public/ [L,R=301]
+
+# 2. Prevent people from seeing 'app' folder (Security)
+RewriteRule ^app/ - [F,L]
