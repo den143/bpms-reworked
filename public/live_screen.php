@@ -15,19 +15,37 @@ $event_id = 0;
 
 // Fetch Event Context
 if ($_SESSION['role'] === 'Event Manager') {
-    $evt = $conn->query("SELECT id, name FROM events WHERE user_id=$uid AND status='Active'")->fetch_assoc();
+    // UPDATED: Column 'manager_id' and 'title'
+    $stmt = $conn->prepare("SELECT id, title FROM events WHERE manager_id = ? AND status = 'Active' LIMIT 1");
+    $stmt->bind_param("i", $uid);
+    $stmt->execute();
+    $evt = $stmt->get_result()->fetch_assoc();
 } else {
-    $evt = $conn->query("SELECT e.id, e.name FROM events e JOIN event_organizers eo ON e.id = eo.event_id WHERE eo.user_id=$uid AND eo.status='Active' AND e.status='Active'")->fetch_assoc();
+    // UPDATED: Table 'event_teams' and Column 'title'
+    $stmt = $conn->prepare("
+        SELECT e.id, e.title 
+        FROM events e 
+        JOIN event_teams et ON e.id = et.event_id 
+        WHERE et.user_id = ? AND et.status = 'Active' AND e.status = 'Active'
+        LIMIT 1
+    ");
+    $stmt->bind_param("i", $uid);
+    $stmt->execute();
+    $evt = $stmt->get_result()->fetch_assoc();
 }
 
 if ($evt) {
     $event_id = $evt['id'];
-    $event_name = $evt['name'];
+    $event_name = $evt['title'];
 } else {
     die("<div style='color:white;text-align:center;padding:50px;background:#111;font-family:sans-serif;'><h1>No Active Event Found</h1></div>");
 }
 
-$rounds = $conn->query("SELECT id, title, status FROM rounds WHERE event_id=$event_id ORDER BY ordering")->fetch_all(MYSQLI_ASSOC);
+// Fetch Rounds (Filtered by is_deleted=0)
+$r_stmt = $conn->prepare("SELECT id, title, status FROM rounds WHERE event_id = ? AND is_deleted = 0 ORDER BY ordering");
+$r_stmt->bind_param("i", $event_id);
+$r_stmt->execute();
+$rounds = $r_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -101,10 +119,8 @@ $rounds = $conn->query("SELECT id, title, status FROM rounds WHERE event_id=$eve
     .mode-reveal .rank-1 .cell-rank { color: #F59E0B; text-shadow: 0 0 20px rgba(245, 158, 11, 0.5); }
 
     /* 3. VERDICT: High-Contrast Highlights */
-    
-    /* FIX: Removed space so it targets the row itself */
     .mode-verdict.row-qualified { 
-        border: 3px solid #22c55e !important; /* Force Green Border */
+        border: 3px solid #22c55e !important; 
         background: rgba(6, 95, 70, 0.6) !important; 
         box-shadow: 0 0 30px rgba(34, 197, 94, 0.5);
         z-index: 10;
@@ -114,7 +130,6 @@ $rounds = $conn->query("SELECT id, title, status FROM rounds WHERE event_id=$eve
     .mode-verdict.row-qualified .cell-name { color: #ffffff; text-shadow: 0 0 10px rgba(34, 197, 94, 0.8); }
     .mode-verdict.row-qualified .cell-rank { color: #4ade80; }
 
-    /* FIX: Removed space */
     .mode-verdict.row-eliminated { 
         opacity: 0.2; 
         filter: grayscale(100%); 
@@ -251,9 +266,6 @@ $rounds = $conn->query("SELECT id, title, status FROM rounds WHERE event_id=$eve
                 roundStatus = data.round_status;
 
                 updateStatusUI(); // Update the pill badge
-                
-                // AUTO-PILOT REMOVED COMPLETELY
-
                 renderRows(); // Physical DOM update
             }
         } catch(e) {

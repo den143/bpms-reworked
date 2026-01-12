@@ -14,7 +14,7 @@ class Event
 
         $stmt = $db->prepare(
             "SELECT * FROM events 
-             WHERE user_id = ? AND status = 'Active' 
+             WHERE manager_id = ? AND status = 'Active' AND is_deleted = 0
              LIMIT 1"
         );
 
@@ -27,7 +27,7 @@ class Event
 
     public static function create(
         int $userId,
-        string $name,
+        string $title, 
         string $date,
         string $venue
     ): bool {
@@ -36,20 +36,22 @@ class Event
         try {
             $db->begin_transaction();
 
+            // 1. Deactivate previous active events for this manager
             $stmt1 = $db->prepare(
                 "UPDATE events 
                  SET status = 'Inactive' 
-                 WHERE user_id = ?"
+                 WHERE manager_id = ?"
             );
             $stmt1->bind_param("i", $userId);
             $stmt1->execute();
 
+            // 2. Create new Active event
             $stmt2 = $db->prepare(
                 "INSERT INTO events 
-                 (user_id, name, event_date, venue, status)
+                 (manager_id, title, event_date, venue, status)
                  VALUES (?, ?, ?, ?, 'Active')"
             );
-            $stmt2->bind_param("isss", $userId, $name, $date, $venue);
+            $stmt2->bind_param("isss", $userId, $title, $date, $venue);
             $stmt2->execute();
 
             $db->commit();
@@ -57,6 +59,7 @@ class Event
 
         } catch (Throwable $e) {
             $db->rollback();
+            error_log("Event Create Error: " . $e->getMessage());
             return false;
         }
     }

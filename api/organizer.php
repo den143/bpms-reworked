@@ -28,7 +28,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
     $conn->begin_transaction();
     try {
-        // Step 1: Check if this email already exists
+        // Step 1: Check if this email already exists in 'users'
         $checkAdmin = $conn->prepare("SELECT id, role FROM users WHERE email = ?");
         $checkAdmin->bind_param("s", $email);
         $checkAdmin->execute();
@@ -47,8 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             
             $user_id = $existingUser['id'];
             
-            // Logic: Update Name, Phone, and Password to match the new input.
-            // This ensures the profile is up-to-date with what the Event Manager just typed.
+            // Logic: Update Name, Phone, Password, and Role.
             $hashed_pass = password_hash($pass, PASSWORD_DEFAULT);
             $updateStmt = $conn->prepare("UPDATE users SET name=?, phone=?, password=?, role=? WHERE id=?");
             $updateStmt->bind_param("ssssi", $name, $phone, $hashed_pass, $role, $user_id);
@@ -70,34 +69,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $msg_prefix = "New organizer created & ";
         }
 
-        // Step 2: Link User to Event
-        $linkCheck = $conn->prepare("SELECT id FROM event_organizers WHERE event_id = ? AND user_id = ?");
+        // Step 2: Link User to Event (Using new table 'event_teams')
+        // We check if they are already in the team for this event, regardless of current status.
+        $linkCheck = $conn->prepare("SELECT id FROM event_teams WHERE event_id = ? AND user_id = ?");
         $linkCheck->bind_param("ii", $event_id, $user_id);
         $linkCheck->execute();
         $linkRes = $linkCheck->get_result();
         
         if ($linkRes->num_rows > 0) {
-            // RESTORE
+            // RESTORE / UPDATE ROLE
             $link_id = $linkRes->fetch_assoc()['id'];
-            $restore = $conn->prepare("UPDATE event_organizers SET status='Active', is_deleted=0 WHERE id=?");
-            $restore->bind_param("i", $link_id);
+            $restore = $conn->prepare("UPDATE event_teams SET status='Active', is_deleted=0, role=? WHERE id=?");
+            $restore->bind_param("si", $role, $link_id);
             $restore->execute();
             $msg = $msg_prefix . "restored to this event.";
         } else {
             // CREATE LINK
-            $insert = $conn->prepare("INSERT INTO event_organizers (event_id, user_id, status, is_deleted) VALUES (?, ?, 'Active', 0)");
-            $insert->bind_param("ii", $event_id, $user_id);
+            $insert = $conn->prepare("INSERT INTO event_teams (event_id, user_id, role, status, is_deleted) VALUES (?, ?, ?, 'Active', 0)");
+            $insert->bind_param("iis", $event_id, $user_id, $role);
             $insert->execute();
             $msg = $msg_prefix . "added to this event.";
         }
 
         // Step 3: Send Email Notification
         require_once __DIR__ . '/../app/core/CustomMailer.php';
-        $site_link = "https://juvenal-esteban-octavalent.ngrok-free.dev/bpms/public/index.php"; 
+        $site_link = "https://juvenal-esteban-octavalent.ngrok-free.dev/bpms_v2/public/index.php"; 
 
         $evt_name = "the Event";
-        $e_query = $conn->query("SELECT name FROM events WHERE id = $event_id");
-        if ($row = $e_query->fetch_assoc()) $evt_name = $row['name'];
+        // UPDATED: Column 'title'
+        $e_query = $conn->query("SELECT title FROM events WHERE id = $event_id");
+        if ($row = $e_query->fetch_assoc()) $evt_name = $row['title'];
 
         $subject = "Team Assignment: $role for $evt_name";
         
@@ -137,13 +138,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 // ACTION 2: UPDATE ORGANIZER (Edit via Edit Button)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update') {
     
-    $user_id = (int)$_POST['org_id'];
+    $user_id = (int)$_POST['org_id']; // This is the User ID
     $name  = trim($_POST['name']);
     $email = trim($_POST['email']);
     $phone = trim($_POST['phone']);
     $role  = trim($_POST['role']);
     $pass  = trim($_POST['password']);
 
+    $conn->begin_transaction();
     try {
         // SECURITY: Hierarchy Protection
         $checkRole = $conn->query("SELECT role FROM users WHERE id = $user_id");
@@ -159,7 +161,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             throw new Exception("This email is already used by another account.");
         }
 
-        // Update User Profile
+        // Update User Profile (users table)
         if (!empty($pass)) {
             $hashed_pass = password_hash($pass, PASSWORD_DEFAULT);
             $stmt = $conn->prepare("UPDATE users SET name=?, email=?, phone=?, role=?, password=? WHERE id=?");
@@ -168,17 +170,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $stmt = $conn->prepare("UPDATE users SET name=?, email=?, phone=?, role=? WHERE id=?");
             $stmt->bind_param("ssssi", $name, $email, $phone, $role, $user_id);
         }
-
         $stmt->execute();
+
+        // SYNC: Update Role in Event Teams as well
+        // Since 'role' is also stored in 'event_teams' now, we must sync it.
+        // This updates the role for this user across all events they are assigned to (assuming role consistency).
+        $stmt2 = $conn->prepare("UPDATE event_teams SET role=? WHERE user_id=?");
+        $stmt2->bind_param("si", $role, $user_id);
+        $stmt2->execute();
+
+        $conn->commit();
         header("Location: ../public/organizers.php?success=Organizer updated");
 
     } catch (mysqli_sql_exception $e) {
+        $conn->rollback();
         if ($e->getCode() == 1062) {
              header("Location: ../public/organizers.php?error=Email is already taken.");
         } else {
              header("Location: ../public/organizers.php?error=Database error.");
         }
     } catch (Exception $e) {
+        $conn->rollback();
         header("Location: ../public/organizers.php?error=" . urlencode($e->getMessage()));
     }
     exit();
@@ -186,23 +198,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
 // ACTION 3: REMOVE / RESTORE / ARCHIVE
 if (isset($_GET['action']) && isset($_GET['id'])) {
-    $link_id = (int)$_GET['id'];
+    $link_id = (int)$_GET['id']; // This is event_teams.id
     $type = $_GET['action'];
 
     if ($type === 'delete') {
-        $stmt = $conn->prepare("UPDATE event_organizers SET is_deleted = 1 WHERE id = ?");
+        $stmt = $conn->prepare("UPDATE event_teams SET is_deleted = 1 WHERE id = ?");
         $stmt->bind_param("i", $link_id);
         $redirect_view = 'archived'; 
         $msg = "Organizer removed permanently from list.";
 
     } elseif ($type === 'restore') {
-        $stmt = $conn->prepare("UPDATE event_organizers SET status = 'Active', is_deleted = 0 WHERE id = ?");
+        $stmt = $conn->prepare("UPDATE event_teams SET status = 'Active', is_deleted = 0 WHERE id = ?");
         $stmt->bind_param("i", $link_id);
         $redirect_view = 'archived'; 
         $msg = "Organizer restored successfully.";
 
     } else {
-        $stmt = $conn->prepare("UPDATE event_organizers SET status = 'Inactive' WHERE id = ?");
+        $stmt = $conn->prepare("UPDATE event_teams SET status = 'Inactive' WHERE id = ?");
         $stmt->bind_param("i", $link_id);
         $redirect_view = 'active'; 
         $msg = "Organizer moved to archive.";

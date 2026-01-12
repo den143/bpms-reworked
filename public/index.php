@@ -3,12 +3,14 @@ session_start();
 
 // Redirect logged-in users
 if (isset($_SESSION['user_id']) && isset($_SESSION['role'])) {
-    // NEW: Audience Redirect
+    
+    // 1. Special Redirect for Audience (Voters)
     if ($_SESSION['role'] === 'Audience') {
         header("Location: ./audience_dashboard.php");
         exit();
     }
 
+    // 2. Redirect Staff & Participants
     switch ($_SESSION['role']) {
         case 'Event Manager':
             header("Location: ./dashboard.php");
@@ -24,6 +26,9 @@ if (isset($_SESSION['user_id']) && isset($_SESSION['role'])) {
             break;
         case 'Contestant':
             header("Location: ./contestant_dashboard.php"); 
+            break;
+        case 'Judge': 
+            header("Location: ./judge_dashboard.php"); 
             break;
         default:
             header("Location: ./logout.php");
@@ -97,17 +102,12 @@ $error = $_GET['error'] ?? null;
         .alert-error { background-color: #fee2e2; color: #dc2626; padding: 12px; border-radius: 8px; font-size: 14px; margin-bottom: 20px; text-align: center; border: 1px solid #fecaca; display: flex; align-items: center; justify-content: center; gap: 8px; }
         .toggle-password { position: absolute; right: 15px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #9ca3af; }
 
-        /* NEW STYLES FOR TOGGLE */
+        /* TOGGLE STYLES */
         .hidden { display: none; }
         .audience-section { margin-top: 15px; text-align: center; }
         .audience-btn { background: none; border: none; color: #059669; font-weight: 700; cursor: pointer; text-decoration: underline; font-size: 14px; }
         .audience-btn:hover { color: #047857; }
         
-        /* NEW: Demo Link Style */
-        .demo-mode-link { margin-top: 15px; padding-top: 10px; border-top: 1px dashed #d1d5db; text-align: center; }
-        .demo-mode-link a { color: #ef4444; font-size: 13px; font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; }
-        .demo-mode-link a:hover { text-decoration: underline; color: #dc2626; }
-
         @media (max-width: 900px) {
             body { flex-direction: column; overflow-y: auto; }
             .brand-section { width: 100%; min-height: auto; padding: 15px 20px; flex-direction: row; justify-content: space-between; align-items: center; text-align: left; background: #111827; flex-shrink: 0; }
@@ -162,13 +162,16 @@ $error = $_GET['error'] ?? null;
                             <i class="fas fa-user-tag icon"></i>
                             <select name="role" class="form-control" required>
                                 <option value="" disabled selected>Select your role...</option>
-                                <option value="Event Manager" style="font-weight:bold; color:#111827;">Event Manager</option>
-                                <option value="Judge Coordinator">&nbsp;&nbsp;&nbsp;Judge Coordinator</option>
-                                <option value="Contestant Manager">&nbsp;&nbsp;&nbsp;Contestant Manager</option>
-                                <option value="Tabulator">&nbsp;&nbsp;&nbsp;Tabulator</option>
-                                <option disabled>────────────────</option>
-                                <option value="Contestant">Contestant</option>
-                                <option value="Judge">Judge</option>
+                                <optgroup label="Management">
+                                    <option value="Event Manager">Event Manager</option>
+                                    <option value="Judge Coordinator">Judge Coordinator</option>
+                                    <option value="Contestant Manager">Contestant Manager</option>
+                                    <option value="Tabulator">Tabulator</option>
+                                </optgroup>
+                                <optgroup label="Participants">
+                                    <option value="Judge">Judge</option>
+                                    <option value="Contestant">Contestant</option>
+                                </optgroup>
                             </select>
                         </div>
                     </div>
@@ -202,13 +205,8 @@ $error = $_GET['error'] ?? null;
                 <div class="audience-section">
                     Watching the show? <button class="audience-btn" onclick="toggleAudience(true)">Enter Ticket Code</button>
                 </div>
-
-                <div class="demo-mode-link">
-                    <a href="demo_access.php">
-                        <i class="fas fa-flask"></i> Enter Research Demo Mode
-                    </a>
+                
                 </div>
-            </div>
 
             <div id="audience-form" class="hidden">
                 <div class="login-header">

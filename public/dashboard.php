@@ -6,14 +6,16 @@ require_once __DIR__ . '/../app/config/database.php';
 
 // 1. Fetch Active Event for this Manager
 $manager_id = $_SESSION['user_id'];
-$event_query = $conn->prepare("SELECT id, name, event_date, venue FROM events WHERE user_id = ? AND status = 'Active' LIMIT 1");
+
+// UPDATED: Column 'manager_id' and 'title'
+$event_query = $conn->prepare("SELECT id, title, event_date, venue FROM events WHERE manager_id = ? AND status = 'Active' LIMIT 1");
 $event_query->bind_param("i", $manager_id);
 $event_query->execute();
 $event_result = $event_query->get_result();
 
 $active_event = $event_result->fetch_assoc();
 $event_id = $active_event['id'] ?? null;
-$event_title = $active_event['name'] ?? "No Active Event";
+$event_title = $active_event['title'] ?? "No Active Event"; // Changed 'name' to 'title'
 $event_venue = $active_event['venue'] ?? "No Venue Selected";
 $event_date_str = $active_event['event_date'] ?? null;
 
@@ -35,28 +37,31 @@ $count_rounds = 0;
 
 if ($event_id) {
     // A. Count Active Contestants
+    // UPDATED: Table 'event_contestants' (ec)
     $c_stmt = $conn->prepare("
         SELECT COUNT(*) as total 
         FROM users u 
-        JOIN contestant_details cd ON u.id = cd.user_id 
-        WHERE cd.event_id = ? AND u.status = 'Active'
+        JOIN event_contestants ec ON u.id = ec.user_id 
+        WHERE ec.event_id = ? AND u.status = 'Active' AND ec.is_deleted = 0
     ");
     $c_stmt->bind_param("i", $event_id);
     $c_stmt->execute();
     $count_contestants = $c_stmt->get_result()->fetch_assoc()['total'];
 
     // B. Count Active Judges
+    // Matches 'event_judges' table
     $j_stmt = $conn->prepare("
         SELECT COUNT(*) as total 
         FROM event_judges 
-        WHERE event_id = ? AND status = 'Active'
+        WHERE event_id = ? AND status = 'Active' AND is_deleted = 0
     ");
     $j_stmt->bind_param("i", $event_id);
     $j_stmt->execute();
     $count_judges = $j_stmt->get_result()->fetch_assoc()['total'];
     
     // C. Count Rounds
-    $r_stmt = $conn->prepare("SELECT COUNT(*) as total FROM rounds WHERE event_id = ?");
+    // Matches 'rounds' table
+    $r_stmt = $conn->prepare("SELECT COUNT(*) as total FROM rounds WHERE event_id = ? AND is_deleted = 0");
     $r_stmt->bind_param("i", $event_id);
     $r_stmt->execute();
     $count_rounds = $r_stmt->get_result()->fetch_assoc()['total'];
@@ -280,7 +285,7 @@ unset($_SESSION['success'], $_SESSION['error'], $_SESSION['show_modal']);
             <h2>Create New Event</h2>
             <p>Please setup your event details to proceed.</p>
             <form action="../api/event.php" method="POST">
-                <input type="text" name="event_name" placeholder="Event Name (e.g., Miss Universe 2025)" required>
+                <input type="text" name="title" placeholder="Event Name (e.g., Miss Universe 2025)" required>
                 <input type="date" name="event_date" required>
                 <input type="text" name="venue" placeholder="Venue" required>
                 <button type="submit" class="btn-create">Create Event</button>

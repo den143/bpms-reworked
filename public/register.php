@@ -4,7 +4,8 @@ require_once __DIR__ . '/../app/config/database.php';
 
 // Fetch Active Events
 $events = [];
-$result = $conn->query("SELECT id, name FROM events WHERE status = 'Active'");
+// UPDATED: Column 'title' instead of 'name'
+$result = $conn->query("SELECT id, title FROM events WHERE status = 'Active'");
 if ($result) {
     $events = $result->fetch_all(MYSQLI_ASSOC);
 }
@@ -72,6 +73,9 @@ $success = $_GET['success'] ?? null;
 
         .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
         .full-width { grid-column: span 2; }
+        
+        /* Triple column for Vital Stats */
+        .triple-column { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
 
         .form-group { position: relative; } 
         .form-group label { display: block; margin-bottom: 5px; color: #374151; font-weight: 600; font-size: 13px; }
@@ -158,6 +162,7 @@ $success = $_GET['success'] ?? null;
             .register-card { margin-top: 0; padding: 25px; }
             .form-grid { grid-template-columns: 1fr; } /* Stack inputs */
             .full-width { grid-column: span 1; }
+            .triple-column { grid-template-columns: 1fr 1fr 1fr; } 
         }
     </style>
 </head>
@@ -198,7 +203,7 @@ $success = $_GET['success'] ?? null;
                         <select name="event_id" class="form-control" required>
                             <option value="" disabled selected>-- Choose an Open Event --</option>
                             <?php foreach ($events as $evt): ?>
-                                <option value="<?= $evt['id'] ?>"><?= htmlspecialchars($evt['name']) ?></option>
+                                <option value="<?= $evt['id'] ?>"><?= htmlspecialchars($evt['title']) ?></option>
                             <?php endforeach; ?>
                         </select>
                     </div>
@@ -226,12 +231,16 @@ $success = $_GET['success'] ?? null;
 
                     <div class="form-group">
                         <label>Height (cm)</label>
-                        <input type="number" name="height" class="form-control" placeholder="170" required>
+                        <input type="number" step="0.01" name="height" class="form-control" placeholder="170" required>
                     </div>
 
-                    <div class="form-group">
-                        <label>Vital Statistics</label>
-                        <input type="text" name="vital_stats" class="form-control" placeholder="e.g. 34-24-36">
+                    <div class="form-group full-width">
+                        <label>Vital Statistics (in inches)</label>
+                        <div class="triple-column">
+                            <input type="number" step="0.1" name="bust" class="form-control" placeholder="Bust (e.g. 34)" required>
+                            <input type="number" step="0.1" name="waist" class="form-control" placeholder="Waist (e.g. 24)" required>
+                            <input type="number" step="0.1" name="hips" class="form-control" placeholder="Hips (e.g. 36)" required>
+                        </div>
                     </div>
 
                     <div class="form-group">
@@ -239,9 +248,9 @@ $success = $_GET['success'] ?? null;
                         <input type="text" name="hometown" class="form-control" placeholder="e.g. Catarman" required>
                     </div>
 
-                    <div class="form-group full-width">
+                    <div class="form-group">
                         <label>Advocacy / Motto</label>
-                        <input type="text" name="motto" class="form-control" placeholder="Short phrase describing you...">
+                        <input type="text" name="motto" class="form-control" placeholder="Short phrase...">
                     </div>
 
                     <div class="form-group full-width">

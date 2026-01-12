@@ -29,8 +29,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             }
 
             if (move_uploaded_file($_FILES['photo']['tmp_name'], $upload_dir . $new_filename)) {
-                // Update Photo in DB
-                $photo_stmt = $conn->prepare("UPDATE contestant_details SET photo = ? WHERE user_id = ?");
+                // Update Photo in DB (Table: event_contestants)
+                $photo_stmt = $conn->prepare("UPDATE event_contestants SET photo = ? WHERE user_id = ?");
                 $photo_stmt->bind_param("si", $new_filename, $user_id);
                 $photo_stmt->execute();
             }
@@ -38,7 +38,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 
     // B. UPDATE TEXT DETAILS
-    $upd = $conn->prepare("UPDATE contestant_details SET motto = ?, hometown = ? WHERE user_id = ?");
+    // Updated: Table 'event_contestants'
+    $upd = $conn->prepare("UPDATE event_contestants SET motto = ?, hometown = ? WHERE user_id = ?");
     $upd->bind_param("ssi", $new_motto, $new_hometown, $user_id);
     if ($upd->execute()) {
         $message = "Profile updated successfully.";
@@ -46,12 +47,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 }
 
 // 2. FETCH DATA
+// Updated: 
+// - 'contestant_details' -> 'event_contestants' (aliased as ec)
+// - 'events.name' -> 'events.title'
+// - 'vital_stats' constructed via CONCAT from bust, waist, hips
 $sql = "SELECT u.name, u.email, u.status, 
-               cd.age, cd.height, cd.vital_stats, cd.hometown, cd.motto, cd.photo, cd.contestant_number,
-               e.id as event_id, e.name as event_name, e.event_date, e.venue, e.status as event_status
+               ec.age, ec.height, 
+               CONCAT(ec.bust, '-', ec.waist, '-', ec.hips) as vital_stats, 
+               ec.hometown, ec.motto, ec.photo, ec.contestant_number,
+               e.id as event_id, e.title as event_name, e.event_date, e.venue, e.status as event_status
         FROM users u 
-        LEFT JOIN contestant_details cd ON u.id = cd.user_id 
-        LEFT JOIN events e ON cd.event_id = e.id 
+        LEFT JOIN event_contestants ec ON u.id = ec.user_id 
+        LEFT JOIN events e ON ec.event_id = e.id 
         WHERE u.id = ?";
 
 $stmt = $conn->prepare($sql);
@@ -60,15 +67,16 @@ $stmt->execute();
 $data = $stmt->get_result()->fetch_assoc();
 
 // 3. SECURITY CHECK
-if ($data['status'] === 'Inactive' || $data['status'] === 'Rejected') {
-    die("Access Restricted. Contact Administrator."); 
+if ($data['event_status'] === 'Inactive') {
+    die("Access Restricted. The event is currently inactive."); 
 }
 
 // 4. ACTIVITIES
+// Updated: Table 'event_activities'
 $activities = [];
 if ($data['event_id']) {
     $act_sql = "SELECT title, description, activity_date, start_time, venue 
-                FROM activities 
+                FROM event_activities 
                 WHERE event_id = ? AND is_deleted = 0 
                 ORDER BY activity_date ASC, start_time ASC";
     $act_stmt = $conn->prepare($act_sql);
@@ -217,28 +225,7 @@ if ($data['event_date']) {
 
     <div class="main-wrapper">
         
-        <div class="sidebar" id="sidebar">
-            <div class="sidebar-header">
-                <img src="assets/images/BPMS_logo.png" alt="Logo" class="sidebar-logo">
-                <div class="brand-text">
-                    <div class="brand-name">BPMS</div>
-                    <div class="brand-subtitle">Candidate Portal</div>
-                </div>
-            </div>
-            
-            <ul class="sidebar-menu">
-                <li><a href="contestant_dashboard.php" class="active"><i class="fas fa-home"></i> <span>Dashboard</span></a></li>
-            </ul>
-            
-            <div class="sidebar-footer">
-                <a href="settings.php">
-                    <i class="fas fa-cog"></i> <span>Settings</span>
-                </a>
-                <a href="logout.php" onclick="return confirm('Logout?');">
-                    <i class="fas fa-sign-out-alt"></i> <span>Logout</span>
-                </a>
-            </div>
-        </div>
+        <?php require_once __DIR__ . '/../app/views/partials/sidebar.php'; ?>
 
         <div class="content-area">
             
@@ -343,6 +330,9 @@ if ($data['event_date']) {
                                 <div style="display:flex; justify-content:space-between; font-size:14px; color:#475569;">
                                     <span>Height</span> <strong><?= htmlspecialchars($data['height']) ?></strong>
                                 </div>
+                                <div style="display:flex; justify-content:space-between; font-size:14px; color:#475569; margin-top:8px;">
+                                    <span>Vital Stats</span> <strong><?= htmlspecialchars($data['vital_stats']) ?></strong>
+                                </div>
                             </div>
 
                             <div style="text-align: left; margin-bottom: 12px;">
@@ -379,7 +369,7 @@ if ($data['event_date']) {
             overlay.classList.toggle('active');
         }
 
-        // UPDATED: Image Preview Function
+        // Image Preview Function
         function previewImage(input) {
             if (input.files && input.files[0]) {
                 var reader = new FileReader();

@@ -12,11 +12,9 @@ $role = $_SESSION['role'] ?? '';
 $is_event_manager = ($role === 'Event Manager');
 
 // --- DETERMINE ACTIVE TAB ---
-// If not admin, force them to 'account' tab
 $default_tab = $is_event_manager ? 'event_details' : 'account';
 $active_tab = $_GET['tab'] ?? $default_tab;
 
-// If a non-admin tries to access admin tabs via URL, force them back
 if (!$is_event_manager && $active_tab !== 'account') {
     $active_tab = 'account';
 }
@@ -29,7 +27,7 @@ $total_used = 0;
 $all_events = [];
 
 if ($is_event_manager) {
-    $active_evt_query = $conn->prepare("SELECT * FROM events WHERE user_id = ? AND status = 'Active' AND is_deleted = 0 LIMIT 1");
+    $active_evt_query = $conn->prepare("SELECT * FROM events WHERE manager_id = ? AND status = 'Active' AND is_deleted = 0 LIMIT 1");
     $active_evt_query->bind_param("i", $u_id);
     $active_evt_query->execute();
     $active_event = $active_evt_query->get_result()->fetch_assoc();
@@ -44,12 +42,14 @@ if ($is_event_manager) {
             if ($row['status'] == 'Unused') $total_unused = $row['count'];
             if ($row['status'] == 'Used') $total_used = $row['count'];
         }
+        
         // List
-        $tickets = $conn->query("SELECT * FROM tickets WHERE event_id = $event_id ORDER BY created_at DESC LIMIT 100")->fetch_all(MYSQLI_ASSOC);
+        // FIX: Changed 'created_at' to 'generated_at'
+        $tickets = $conn->query("SELECT * FROM tickets WHERE event_id = $event_id ORDER BY generated_at DESC LIMIT 100")->fetch_all(MYSQLI_ASSOC);
     }
 
     // Fetch History
-    $hist_stmt = $conn->prepare("SELECT * FROM events WHERE user_id = ? AND is_deleted = 0 ORDER BY created_at DESC");
+    $hist_stmt = $conn->prepare("SELECT * FROM events WHERE manager_id = ? AND is_deleted = 0 ORDER BY created_at DESC");
     $hist_stmt->bind_param("i", $u_id);
     $hist_stmt->execute();
     $all_events = $hist_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
@@ -58,7 +58,6 @@ if ($is_event_manager) {
 // --- 3. HANDLE FORM SUBMISSIONS ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
-    // SECURITY: Block non-admins from event actions
     if (!$is_event_manager && (isset($_POST['update_event_details']) || isset($_POST['switch_event']) || isset($_POST['remove_event']))) {
         die("Unauthorized Action");
     }
@@ -66,12 +65,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // A. UPDATE ACTIVE EVENT DETAILS
     if (isset($_POST['update_event_details'])) {
         $eid = (int)$_POST['event_id'];
-        $name = trim($_POST['event_name']);
+        $title = trim($_POST['title']);
         $date = $_POST['event_date'];
         $venue = trim($_POST['venue']);
 
-        $stmt = $conn->prepare("UPDATE events SET name=?, event_date=?, venue=? WHERE id=? AND user_id=?");
-        $stmt->bind_param("sssii", $name, $date, $venue, $eid, $u_id);
+        $stmt = $conn->prepare("UPDATE events SET title=?, event_date=?, venue=? WHERE id=? AND manager_id=?");
+        $stmt->bind_param("sssii", $title, $date, $venue, $eid, $u_id);
         
         if ($stmt->execute()) {
             $_SESSION['success'] = "Event details updated successfully.";
@@ -82,7 +81,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit();
     }
 
-    // B. UPDATE MY ACCOUNT (Available to EVERYONE)
+    // B. UPDATE MY ACCOUNT
     if (isset($_POST['update_profile'])) {
         $name = trim($_POST['my_name']);
         $current_pass = $_POST['current_password'];
@@ -136,8 +135,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $conn->begin_transaction();
         try {
-            $conn->query("UPDATE events SET status = 'Inactive' WHERE user_id = $u_id");
-            $conn->query("UPDATE events SET status = 'Active' WHERE id = $target_id AND user_id = $u_id");
+            $conn->query("UPDATE events SET status = 'Inactive' WHERE manager_id = $u_id");
+            $conn->query("UPDATE events SET status = 'Active' WHERE id = $target_id AND manager_id = $u_id");
             $conn->commit();
             $_SESSION['success'] = "Event switched successfully.";
             header("Location: dashboard.php");
@@ -172,7 +171,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit();
         }
 
-        $stmt = $conn->prepare("UPDATE events SET is_deleted = 1, status = 'Inactive' WHERE id = ? AND user_id = ?");
+        $stmt = $conn->prepare("UPDATE events SET is_deleted = 1, status = 'Inactive' WHERE id = ? AND manager_id = ?");
         $stmt->bind_param("ii", $target_id, $u_id);
         
         if ($stmt->execute()) {
@@ -353,8 +352,8 @@ $me = $me_stmt->get_result()->fetch_assoc();
                                     <form method="POST" onsubmit="showLoading()">
                                         <input type="hidden" name="event_id" value="<?= $active_event['id'] ?>">
                                         <div class="form-group">
-                                            <label class="form-label">Event Name</label>
-                                            <input type="text" name="event_name" class="form-control" value="<?= htmlspecialchars($active_event['name']) ?>" required>
+                                            <label class="form-label">Event Title</label>
+                                            <input type="text" name="title" class="form-control" value="<?= htmlspecialchars($active_event['title']) ?>" required>
                                         </div>
                                         <div class="form-group">
                                             <label class="form-label">Event Date</label>
@@ -426,9 +425,9 @@ $me = $me_stmt->get_result()->fetch_assoc();
                                                     <?php foreach ($tickets as $index => $t): ?>
                                                         <tr>
                                                             <td style="color:#9ca3af;"><?= $index + 1 ?></td>
-                                                            <td style="font-size:16px; letter-spacing:1px;"><?= htmlspecialchars($t['code']) ?></td>
+                                                            <td style="font-size:16px; letter-spacing:1px;"><?= htmlspecialchars($t['ticket_code']) ?></td>
                                                             <td><span class="<?= ($t['status'] == 'Used') ? 'status-used' : 'status-unused' ?>"><?= $t['status'] ?></span></td>
-                                                            <td style="color:#6b7280;"><?= date('M d, Y h:i A', strtotime($t['created_at'])) ?></td>
+                                                            <td style="color:#6b7280;"><?= date('M d, Y h:i A', strtotime($t['generated_at'])) ?></td>
                                                         </tr>
                                                     <?php endforeach; ?>
                                                 <?php endif; ?>
@@ -462,17 +461,17 @@ $me = $me_stmt->get_result()->fetch_assoc();
                                     <button onclick="openCreateModal()" style="background:#1f2937; color:white; border:none; padding:8px 15px; border-radius:6px; cursor:pointer; font-size:13px;">+ Create New</button>
                                 </div>
                                 <table class="data-table">
-                                    <thead><tr><th>Event Name</th><th>Date</th><th>Status</th><th>Action</th></tr></thead>
+                                    <thead><tr><th>Event Title</th><th>Date</th><th>Status</th><th>Action</th></tr></thead>
                                     <tbody>
                                         <?php foreach ($all_events as $evt): $is_curr = ($evt['status'] === 'Active'); ?>
                                         <tr style="<?= $is_curr ? 'background:#f0fdf4;' : '' ?>">
-                                            <td><strong><?= htmlspecialchars($evt['name']) ?></strong></td>
+                                            <td><strong><?= htmlspecialchars($evt['title']) ?></strong></td>
                                             <td><?= $evt['event_date'] ?></td>
                                             <td><span class="badge <?= $is_curr ? 'badge-active' : 'badge-inactive' ?>"><?= $evt['status'] ?></span></td>
                                             <td>
                                                 <?php if (!$is_curr): ?>
-                                                    <button onclick="openSwitchModal(<?= $evt['id'] ?>, '<?= htmlspecialchars($evt['name'], ENT_QUOTES) ?>')" style="background:none; border:none; color:#2563eb; cursor:pointer; font-weight:600; font-size:13px; margin-right:10px;">Switch</button>
-                                                    <button onclick="openRemoveModal(<?= $evt['id'] ?>, '<?= htmlspecialchars($evt['name'], ENT_QUOTES) ?>')" style="background:none; border:none; color:#dc2626; cursor:pointer; font-weight:600; font-size:13px;">Remove</button>
+                                                    <button onclick="openSwitchModal(<?= $evt['id'] ?>, '<?= htmlspecialchars($evt['title'], ENT_QUOTES) ?>')" style="background:none; border:none; color:#2563eb; cursor:pointer; font-weight:600; font-size:13px; margin-right:10px;">Switch</button>
+                                                    <button onclick="openRemoveModal(<?= $evt['id'] ?>, '<?= htmlspecialchars($evt['title'], ENT_QUOTES) ?>')" style="background:none; border:none; color:#dc2626; cursor:pointer; font-weight:600; font-size:13px;">Remove</button>
                                                 <?php else: ?>
                                                     <span style="color:#059669; font-size:13px; font-weight:bold;"><i class="fas fa-check"></i> Active</span>
                                                 <?php endif; ?>
@@ -527,7 +526,7 @@ $me = $me_stmt->get_result()->fetch_assoc();
                 <h3 class="modal-title">Create New Event</h3>
                 <form action="../api/event.php" method="POST" onsubmit="showLoading()">
                     <input type="hidden" name="action" value="create"> 
-                    <div class="form-group"><label class="form-label">Event Name</label><input type="text" name="event_name" class="form-control" placeholder="e.g. Miss Universe 2025" required></div>
+                    <div class="form-group"><label class="form-label">Event Title</label><input type="text" name="title" class="form-control" placeholder="e.g. Miss Universe 2025" required></div>
                     <div class="form-group"><label class="form-label">Date</label><input type="date" name="event_date" class="form-control" required></div>
                     <div class="form-group"><label class="form-label">Venue</label><input type="text" name="venue" class="form-control" placeholder="e.g. Convention Center" required></div>
                     <div class="modal-actions">
@@ -587,7 +586,7 @@ $me = $me_stmt->get_result()->fetch_assoc();
             var divToPrint = document.getElementById("printableTable");
             var newWin = window.open("");
             newWin.document.write("<html><head><title>Ticket Codes</title><style>body{font-family:sans-serif;} table{width:100%; border-collapse:collapse;} th, td{border:1px solid #000; padding:8px; text-align:left;} th{background:#eee;}</style></head><body>");
-            newWin.document.write("<h3>Audience Tickets for <?= htmlspecialchars($active_event['name'] ?? 'Event') ?></h3>");
+            newWin.document.write("<h3>Audience Tickets for <?= htmlspecialchars($active_event['title'] ?? 'Event') ?></h3>");
             newWin.document.write(divToPrint.outerHTML);
             newWin.document.write("</body></html>");
             newWin.print();

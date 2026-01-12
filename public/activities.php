@@ -7,7 +7,8 @@ require_once __DIR__ . '/../app/config/database.php';
 $manager_id = $_SESSION['user_id'];
 
 // Get Active Event
-$evt_stmt = $conn->prepare("SELECT id, name FROM events WHERE user_id = ? AND status = 'Active' LIMIT 1");
+// UPDATED: 'title' instead of 'name' matches your DB
+$evt_stmt = $conn->prepare("SELECT id, title FROM events WHERE manager_id = ? AND status = 'Active' LIMIT 1");
 $evt_stmt->bind_param("i", $manager_id);
 $evt_stmt->execute();
 $active_event = $evt_stmt->get_result()->fetch_assoc();
@@ -19,12 +20,14 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'active';
 if ($active_event) {
     $event_id = $active_event['id'];
     
-    // Fetch Active
-    $sql = "SELECT * FROM activities WHERE event_id = $event_id AND is_deleted = 0 ORDER BY activity_date ASC, start_time ASC";
+    // FETCH ACTIVE
+    // CRITICAL FIX: Table name changed from 'activities' to 'event_activities'
+    $sql = "SELECT * FROM event_activities WHERE event_id = $event_id AND is_deleted = 0 ORDER BY activity_date ASC, start_time ASC";
     $activities = $conn->query($sql)->fetch_all(MYSQLI_ASSOC);
 
-    // Fetch Archived
-    $sql_arc = "SELECT * FROM activities WHERE event_id = $event_id AND is_deleted = 1 ORDER BY activity_date DESC";
+    // FETCH ARCHIVED
+    // CRITICAL FIX: Table name changed from 'activities' to 'event_activities'
+    $sql_arc = "SELECT * FROM event_activities WHERE event_id = $event_id AND is_deleted = 1 ORDER BY activity_date DESC";
     $archived = $conn->query($sql_arc)->fetch_all(MYSQLI_ASSOC);
 }
 
@@ -48,18 +51,33 @@ function getStatusColor($date, $start, $end) {
     <link rel="stylesheet" href="./assets/css/style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        /* Consistent Design with Rounds */
         .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
         .btn-add { background-color: #F59E0B; color: white; padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
-        .btn-icon { background: white; border: 1px solid #d1d5db; width: 32px; height: 32px; border-radius: 4px; cursor: pointer; color: #4b5563; display: flex; justify-content: center; align-items: center; text-decoration: none; }
+        
+        /* UPDATED BUTTON STYLE: Supports Text + Icon */
+        .btn-icon { 
+            background: white; 
+            border: 1px solid #d1d5db; 
+            border-radius: 6px; 
+            cursor: pointer; 
+            color: #4b5563; 
+            display: inline-flex; 
+            justify-content: center; 
+            align-items: center; 
+            text-decoration: none;
+            padding: 6px 12px;
+            width: auto;
+            gap: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
         .btn-icon:hover { background: #f3f4f6; color: #111827; }
 
-        /* Tabs for Archive */
         .view-tabs { display: flex; gap: 10px; margin-bottom: 20px; }
         .view-tab { padding: 8px 16px; border-radius: 20px; font-size: 13px; text-decoration: none; color: #6b7280; background: #f3f4f6; }
         .view-tab.active { background: #1f2937; color: white; }
 
-        /* Activity Card */
         .activity-card { background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 15px; display: flex; overflow: hidden; border: 1px solid #e5e7eb; }
         .date-badge { background: #f3f4f6; width: 80px; display: flex; flex-direction: column; justify-content: center; align-items: center; border-right: 1px solid #e5e7eb; padding: 10px; }
         .date-month { font-size: 12px; font-weight: bold; color: #ef4444; text-transform: uppercase; }
@@ -75,14 +93,13 @@ function getStatusColor($date, $start, $end) {
         .bg-green { background-color: #10b981; }
         .bg-gray { background-color: #9ca3af; }
 
-        /* Modal */
         .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; justify-content: center; align-items: center; z-index: 1000; }
         .modal-content { background: white; padding: 25px; width: 450px; border-radius: 12px; }
         .form-row { display: flex; gap: 15px; }
         .form-group { margin-bottom: 15px; flex: 1; }
         .form-control { width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; box-sizing: border-box; }
-        
         .warning-box { background: #fffbeb; border-left: 4px solid #f59e0b; padding: 15px; margin-bottom: 15px; border-radius: 4px; color: #b45309; font-size: 14px; display: none; }
+        .actions { display: flex; gap: 8px; }
     </style>
 </head>
 <body>
@@ -147,19 +164,24 @@ function getStatusColor($date, $start, $end) {
 
                                 <div class="actions">
                                     <?php if ($view === 'active'): ?>
-                                        <button class="btn-icon" onclick='openEdit(<?= json_encode($act) ?>)' title="Edit">
-                                            <i class="fas fa-edit"></i>
+                                        <button class="btn-icon" onclick='openEdit(<?= json_encode($act, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)' title="Edit">
+                                            <i class="fas fa-edit"></i> Edit
                                         </button>
                                         <a href="../api/activities.php?action=archive&id=<?= $act['id'] ?>" 
                                            class="btn-icon" style="color:#dc2626; border-color:#fee2e2;" 
                                            onclick="return confirm('Archive this activity?')" title="Archive">
-                                            <i class="fas fa-archive"></i>
+                                            <i class="fas fa-archive"></i> Archive
                                         </a>
                                     <?php else: ?>
                                         <a href="../api/activities.php?action=restore&id=<?= $act['id'] ?>" 
                                            class="btn-icon" style="color:#059669; border-color:#d1fae5;" 
                                            title="Restore">
-                                            <i class="fas fa-undo"></i>
+                                            <i class="fas fa-undo"></i> Restore
+                                        </a>
+                                        <a href="../api/activities.php?action=delete&id=<?= $act['id'] ?>" 
+                                           class="btn-icon" style="color:#b91c1c; border-color:#fecaca;" 
+                                           onclick="return confirm('Permanently delete this activity? This cannot be undone.')" title="Delete Permanently">
+                                            <i class="fas fa-trash"></i> Delete
                                         </a>
                                     <?php endif; ?>
                                 </div>
@@ -259,11 +281,9 @@ function getStatusColor($date, $start, $end) {
 
     function closeModal(id) { document.getElementById(id).style.display = 'none'; }
 
-    // Logic for Overlap Warning
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.has('warning')) {
-        openModal('add'); // Re-open modal
-        // Repopulate form from URL params
+        openModal('add');
         if (urlParams.has('title')) document.getElementById('a_title').value = urlParams.get('title');
         if (urlParams.has('venue')) document.getElementById('a_venue').value = urlParams.get('venue');
         if (urlParams.has('activity_date')) document.getElementById('a_date').value = urlParams.get('activity_date');
@@ -274,8 +294,6 @@ function getStatusColor($date, $start, $end) {
              document.getElementById('formAction').value = 'update';
              if (urlParams.has('activity_id')) document.getElementById('act_id').value = urlParams.get('activity_id');
         }
-
-        // Show Warning
         document.getElementById('warningBox').style.display = 'block';
         document.getElementById('warningMsg').innerText = urlParams.get('warning');
     }
@@ -285,7 +303,6 @@ function getStatusColor($date, $start, $end) {
         document.getElementById('actForm').submit();
     }
 
-    // Success/Error Toasts
     if (urlParams.has('success') || urlParams.has('error')) {
         const msg = urlParams.get('success') || urlParams.get('error');
         const type = urlParams.has('success') ? 'success' : 'error';
@@ -295,8 +312,6 @@ function getStatusColor($date, $start, $end) {
         toast.innerText = msg;
         container.appendChild(toast);
         setTimeout(() => toast.remove(), 3000);
-        
-        // Clean URL
         window.history.replaceState({}, document.title, window.location.pathname);
     }
 </script>

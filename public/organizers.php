@@ -12,7 +12,8 @@ $search = trim($_GET['search'] ?? '');
 $role_filter = $_GET['role'] ?? '';
 
 // 1. Get Active Event
-$evt_sql = "SELECT id, name FROM events WHERE user_id = ? AND status = 'Active' LIMIT 1";
+// UPDATED: Column 'title' instead of 'name'
+$evt_sql = "SELECT id, title FROM events WHERE manager_id = ? AND status = 'Active' LIMIT 1";
 $evt_stmt = $conn->prepare($evt_sql);
 $evt_stmt->bind_param("i", $manager_id);
 $evt_stmt->execute();
@@ -23,13 +24,14 @@ $organizers = [];
 if ($active_event) {
     $event_id = $active_event['id'];
 
-    // 2. Build Query (UPDATED: Added is_deleted check)
-    $sql = "SELECT eo.id as link_id, u.id as user_id, u.name, u.email, u.phone, u.role 
-            FROM event_organizers eo 
-            JOIN users u ON eo.user_id = u.id 
-            WHERE eo.event_id = ? 
-              AND eo.status = ?
-              AND eo.is_deleted = 0
+    // 2. Build Query
+    // UPDATED: Table 'event_teams' (aliased as et)
+    $sql = "SELECT et.id as link_id, u.id as user_id, u.name, u.email, u.phone, et.role 
+            FROM event_teams et 
+            JOIN users u ON et.user_id = u.id 
+            WHERE et.event_id = ? 
+              AND et.status = ?
+              AND et.is_deleted = 0
               AND u.role != 'Event Manager'";
 
     $types = "is";
@@ -44,7 +46,7 @@ if ($active_event) {
     }
 
     if (!empty($role_filter)) {
-        $sql .= " AND u.role = ?";
+        $sql .= " AND et.role = ?"; // Use role from team table
         $types .= "s";
         $params[] = $role_filter;
     }
@@ -120,6 +122,12 @@ if ($active_event) {
         .form-group { margin-bottom: 15px; position: relative; } 
         .form-control { width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; }
         .toggle-password { position: absolute; right: 10px; top: 35px; cursor: pointer; color: #9ca3af; }
+        
+        /* DISABLED STATE FOR BUTTONS */
+        button:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
     </style>
 </head>
 <body>
@@ -146,7 +154,7 @@ if ($active_event) {
                     <div class="page-header">
                         <div>
                             <h2 style="color: #111827; margin:0;"><?= ($view === 'archived') ? 'Archived Organizers' : 'Organizer Team' ?></h2>
-                            <p style="color: #6b7280; font-size: 13px; margin-top:5px;">Event: <strong><?= htmlspecialchars($active_event['name']) ?></strong></p>
+                            <p style="color: #6b7280; font-size: 13px; margin-top:5px;">Event: <strong><?= htmlspecialchars($active_event['title']) ?></strong></p>
                         </div>
                         <div class="header-actions">
                             <?php if ($view === 'active'): ?>
@@ -287,7 +295,11 @@ if ($active_event) {
                 </div>
                 <div style="text-align:right; margin-top:20px;">
                     <button type="button" onclick="document.getElementById('addModal').style.display='none'" style="background:#e5e7eb; padding:10px 20px; border:none; border-radius:6px; cursor:pointer; font-weight:600; color:#374151;">Cancel</button>
-                    <button type="submit" style="background:#F59E0B; color:white; padding:10px 20px; border:none; border-radius:6px; cursor:pointer; font-weight:600; margin-left:10px;">Add Member</button>
+                    <button type="submit" 
+                            onclick="this.innerHTML='<i class=\'fas fa-spinner fa-spin\'></i> Sending Email...'; this.style.opacity='0.7'; this.style.cursor='not-allowed';" 
+                            style="background:#F59E0B; color:white; padding:10px 20px; border:none; border-radius:6px; cursor:pointer; font-weight:600; margin-left:10px;">
+                        Add Member
+                    </button>
                 </div>
             </form>
         </div>
@@ -317,7 +329,11 @@ if ($active_event) {
                 </div>
                 <div style="text-align:right; margin-top:20px;">
                     <button type="button" onclick="document.getElementById('editModal').style.display='none'" style="background:#e5e7eb; padding:10px 20px; border:none; border-radius:6px; cursor:pointer; font-weight:600; color:#374151;">Cancel</button>
-                    <button type="submit" style="background:#3b82f6; color:white; padding:10px 20px; border:none; border-radius:6px; cursor:pointer; font-weight:600; margin-left:10px;">Save Changes</button>
+                    <button type="submit" 
+                            onclick="this.innerHTML='<i class=\'fas fa-spinner fa-spin\'></i> Saving...'; this.style.opacity='0.7'; this.style.cursor='not-allowed';" 
+                            style="background:#3b82f6; color:white; padding:10px 20px; border:none; border-radius:6px; cursor:pointer; font-weight:600; margin-left:10px;">
+                        Save Changes
+                    </button>
                 </div>
             </form>
         </div>

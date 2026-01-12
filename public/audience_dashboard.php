@@ -1,18 +1,31 @@
 <?php
 require_once __DIR__ . '/../app/core/guard.php';
-requireLogin();       // Ensures they have a Ticket ID (stored in user_id)
+requireLogin();       // Ensures they have a Ticket ID (stored in $_SESSION['user_id'])
 requireRole('Audience');
 
 require_once __DIR__ . '/../app/config/database.php';
 
 $ticket_id = $_SESSION['user_id'];
 
-// 2. Get Ticket Status (Check if already voted)
-$t_stmt = $conn->prepare("SELECT voted_contestant_id FROM tickets WHERE id = ?");
-$t_stmt->bind_param("i", $ticket_id);
-$t_stmt->execute();
-$ticket_data = $t_stmt->get_result()->fetch_assoc();
-$has_voted = !is_null($ticket_data['voted_contestant_id']);
+// 1. Get Event Context from Ticket
+// We need to know WHICH event this ticket belongs to so we only show those contestants.
+// Matches 'tickets' table
+$evt_stmt = $conn->prepare("SELECT event_id FROM tickets WHERE id = ?");
+$evt_stmt->bind_param("i", $ticket_id);
+$evt_stmt->execute();
+$ticket_meta = $evt_stmt->get_result()->fetch_assoc();
+$event_id = $ticket_meta['event_id'];
+
+// 2. Get Vote Status
+// Check if this ticket has already cast a vote in the 'audience_votes' table.
+// Matches 'audience_votes' table
+$v_stmt = $conn->prepare("SELECT contestant_id FROM audience_votes WHERE ticket_id = ? LIMIT 1");
+$v_stmt->bind_param("i", $ticket_id);
+$v_stmt->execute();
+$vote_record = $v_stmt->get_result()->fetch_assoc();
+
+$has_voted = ($vote_record !== null);
+$voted_for_id = $has_voted ? $vote_record['contestant_id'] : null;
 
 // 3. Handle Voting
 $msg = "";
@@ -20,29 +33,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['vote_id'])) {
     if (!$has_voted) {
         $vote_id = intval($_POST['vote_id']);
         
-        // Update ticket: Set voted contestant AND timestamp
-        $update = $conn->prepare("UPDATE tickets SET voted_contestant_id = ?, used_at = NOW() WHERE id = ?");
-        $update->bind_param("ii", $vote_id, $ticket_id);
-        
-        if ($update->execute()) {
-            $has_voted = true; // Lock UI immediately
+        // Transaction: Record Vote AND Mark Ticket as Used
+        $conn->begin_transaction();
+        try {
+            // A. Insert Vote
+            // Matches 'audience_votes' table structure
+            $stmt_insert = $conn->prepare("INSERT INTO audience_votes (ticket_id, contestant_id, event_id) VALUES (?, ?, ?)");
+            $stmt_insert->bind_param("iii", $ticket_id, $vote_id, $event_id);
+            $stmt_insert->execute();
+
+            // B. Mark Ticket as Used (Redundant but good for quick status checks)
+            $stmt_update = $conn->prepare("UPDATE tickets SET status = 'Used' WHERE id = ?");
+            $stmt_update->bind_param("i", $ticket_id);
+            $stmt_update->execute();
+
+            $conn->commit();
+            
+            $has_voted = true;
+            $voted_for_id = $vote_id;
             $msg = "Vote successfully cast! Thank you.";
-        } else {
-            $msg = "Error processing vote.";
+
+        } catch (Exception $e) {
+            $conn->rollback();
+            $msg = "Error processing vote. Please try again.";
         }
     }
 }
 
+// 4. Fetch Contestants for this specific Event
+// Updated: Uses 'event_contestants' table (aliased as ec)
+$sql = "SELECT ec.id, ec.contestant_number, ec.photo, ec.age, ec.hometown, ec.motto, u.name 
+        FROM event_contestants ec 
+        JOIN users u ON ec.user_id = u.id 
+        WHERE ec.event_id = ? 
+          AND ec.status IN ('Active', 'Qualified') 
+          AND ec.is_deleted = 0
+        ORDER BY ec.contestant_number ASC";
 
-$sql = "SELECT cd.*, u.name 
-        FROM contestant_details cd 
-        JOIN users u ON cd.user_id = u.id 
-        JOIN events e ON cd.event_id = e.id
-        WHERE u.status = 'Active' 
-          AND e.status = 'Active' 
-        ORDER BY cd.id ASC";
-
-$contestants = $conn->query($sql);
+$stmt_c = $conn->prepare($sql);
+$stmt_c->bind_param("i", $event_id);
+$stmt_c->execute();
+$contestants = $stmt_c->get_result();
 ?>
 
 <!DOCTYPE html>
@@ -73,6 +104,10 @@ $contestants = $conn->query($sql);
         /* Card */
         .card { background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); transition: transform 0.2s; position: relative; }
         .card:hover { transform: translateY(-5px); }
+        
+        /* Number Badge */
+        .number-badge { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.7); color: white; padding: 5px 12px; border-radius: 20px; font-weight: bold; font-size: 14px; backdrop-filter: blur(2px); }
+
         .photo { width: 100%; height: 280px; object-fit: cover; background: #e5e7eb; }
         .info { padding: 20px; text-align: center; }
         .name { font-size: 18px; font-weight: 700; color: #1f2937; margin-bottom: 5px; }
@@ -86,13 +121,14 @@ $contestants = $conn->query($sql);
         /* Disabled State */
         .voted-btn { background: #e5e7eb; color: #9ca3af; cursor: not-allowed; }
         .voted-badge { background: #059669; color: white; padding: 12px; border-radius: 8px; font-weight: bold; display: block; }
+        .locked-badge { background: #9ca3af; color: white; padding: 12px; border-radius: 8px; font-weight: bold; display: block; }
     </style>
 </head>
 <body>
 
     <div class="navbar">
         <div class="logo"><i class="fas fa-crown"></i> BPMS Audience</div>
-        <a href="logout.php" class="btn-logout" onclick="return confirm('Warning: Logging out will invalidate your ticket. You will not be able to enter again. Continue?');">
+        <a href="logout.php" class="btn-logout" onclick="return confirm('Warning: Logging out will invalidate your session. Continue?');">
             Logout <i class="fas fa-sign-out-alt"></i>
         </a>
     </div>
@@ -106,10 +142,10 @@ $contestants = $conn->query($sql);
         <div class="status-box">
             <?php if ($has_voted): ?>
                 <h2 style="color: #059669;">Vote Recorded</h2>
-                <p>You have successfully cast your vote. You may browse the candidates, but voting is now closed.</p>
+                <p>You have successfully cast your vote. You may browse the candidates, but voting is now closed for this ticket.</p>
             <?php else: ?>
                 <h2 style="color: #1f2937;">Cast Your Vote</h2>
-                <p>Select your favorite contestant below. <strong>Note: You can only vote once.</strong></p>
+                <p>Select your favorite contestant below. <strong>Note: Your ticket allows only ONE vote.</strong></p>
             <?php endif; ?>
         </div>
 
@@ -117,6 +153,7 @@ $contestants = $conn->query($sql);
             <?php if ($contestants && $contestants->num_rows > 0): ?>
                 <?php while($row = $contestants->fetch_assoc()): ?>
                     <div class="card">
+                        <div class="number-badge">#<?= htmlspecialchars($row['contestant_number']) ?></div>
                         <img src="./assets/uploads/contestants/<?= htmlspecialchars($row['photo']) ?>" class="photo" alt="Contestant">
                         
                         <div class="info">
@@ -133,17 +170,17 @@ $contestants = $conn->query($sql);
                                     <button type="submit" class="btn-vote">Vote Now</button>
                                 </form>
                             <?php else: ?>
-                                <?php if ($ticket_data['voted_contestant_id'] == $row['id']): ?>
-                                    <div class="voted-badge">VOTED <i class="fas fa-check"></i></div>
+                                <?php if ($voted_for_id == $row['id']): ?>
+                                    <div class="voted-badge">YOU VOTED <i class="fas fa-check"></i></div>
                                 <?php else: ?>
-                                    <button class="btn-vote voted-btn" disabled>Locked</button>
+                                    <div class="locked-badge">LOCKED</div>
                                 <?php endif; ?>
                             <?php endif; ?>
                         </div>
                     </div>
                 <?php endwhile; ?>
             <?php else: ?>
-                <p style="text-align:center; color:#6b7280; grid-column: 1 / -1;">No official candidates found for the active event.</p>
+                <p style="text-align:center; color:#6b7280; grid-column: 1 / -1;">No official candidates found for this event.</p>
             <?php endif; ?>
         </div>
     </div>

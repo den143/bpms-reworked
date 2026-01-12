@@ -1,33 +1,47 @@
 <?php
+// bpms/api/contestant.php
 // Purpose: Backend controller for managing Contestants.
-// Handles CRUD operations: Create, Update, Delete (Archive), Approve, and Reject.
 
 require_once __DIR__ . '/../app/core/guard.php';
 requireLogin();
-requireRole(['Event Manager', 'Contestant Manager']); // Only authorized roles can access
+// Fixed typo: removed 'Contestat Manager'
+requireRole(['Event Manager', 'Contestant Manager']); 
 require_once __DIR__ . '/../app/config/database.php';
 
+// HELPER: Parse "34-24-36" string into separate values
+function parseVitalStats($str) {
+    $parts = preg_split('/[^0-9.]/', $str); 
+    return [
+        'bust'  => isset($parts[0]) ? (float)$parts[0] : 0,
+        'waist' => isset($parts[1]) ? (float)$parts[1] : 0,
+        'hips'  => isset($parts[2]) ? (float)$parts[2] : 0
+    ];
+}
+
 // PART 1: HANDLE POST REQUESTS (CREATE / UPDATE)
-// Purpose: Process the "Add Contestant" and "Edit Profile" forms.
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     $action = $_POST['action'] ?? 'create';
     $event_id = (int)$_POST['event_id'];
     $name     = trim($_POST['name']);
     $email    = trim($_POST['email']);
+    $age      = (int)$_POST['age'];
+    $height   = trim($_POST['height']);
+    $hometown = trim($_POST['hometown']);
+    $motto    = trim($_POST['motto']);
     
-    //Profile Details
-    $age         = (int)$_POST['age'];
-    $height      = trim($_POST['height']);
-    $vital_stats = trim($_POST['vital_stats']);
-    $hometown    = trim($_POST['hometown']);
-    $motto       = trim($_POST['motto']);
+    // Convert Frontend "Bust", "Waist", "Hips" inputs if sent individually, 
+    // OR parse from a string if sent as one.
+    // Handling individual inputs from the updated Modal:
+    $bust  = !empty($_POST['bust']) ? (float)$_POST['bust'] : 0;
+    $waist = !empty($_POST['waist']) ? (float)$_POST['waist'] : 0;
+    $hips  = !empty($_POST['hips']) ? (float)$_POST['hips'] : 0;
 
-    // --- CREATE NEW (Manual Add) ---
+    // --- CREATE NEW ---
     if ($action === 'create') {
         $pass = trim($_POST['password']);
         
-        // Validation: Photo is mandatory for new contestants
+        // Photo is mandatory for new contestants
         if (!isset($_FILES['photo']) || $_FILES['photo']['error'] !== 0) {
             header("Location: ../public/contestants.php?error=Photo is required");
             exit();
@@ -39,97 +53,117 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit();
         }
 
-        // TRANSACTION START: Ensure both User and Detail records are created together.
         $conn->begin_transaction();
         try {
             $hashed_pass = password_hash($pass, PASSWORD_DEFAULT);
             
-            // Step 1: Create Login Credentials (users table)
+            // 1. Create User Login
+            // Matches 'users' table
             $stmt1 = $conn->prepare("INSERT INTO users (name, email, password, role, status) VALUES (?, ?, ?, 'Contestant', 'Active')");
             $stmt1->bind_param("sss", $name, $email, $hashed_pass);
             $stmt1->execute();
             $user_id = $conn->insert_id;
 
-            // Step 2: Create Pageant Profile (contestant_details table)
-            $stmt2 = $conn->prepare("INSERT INTO contestant_details (user_id, event_id, age, height, vital_stats, hometown, motto, photo, is_deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)");
-            $stmt2->bind_param("iiisssss", $user_id, $event_id, $age, $height, $vital_stats, $hometown, $motto, $photo_name);
+            // 2. Auto-Assign Contestant Number
+            $num_q = $conn->query("SELECT MAX(contestant_number) as max_num FROM event_contestants WHERE event_id = $event_id");
+            $next_num = ($num_q->fetch_assoc()['max_num'] ?? 0) + 1;
+
+            // 3. Create Profile
+            // Matches 'event_contestants' table
+            $stmt2 = $conn->prepare("INSERT INTO event_contestants (user_id, event_id, contestant_number, age, height, bust, waist, hips, hometown, motto, photo, status, is_deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active', 0)");
+            $stmt2->bind_param("iiidddddsss", $user_id, $event_id, $next_num, $age, $height, $bust, $waist, $hips, $hometown, $motto, $photo_name);
             $stmt2->execute();
             
-            // Logic: Send Welcome Email with Credentials
+            // Send Email
             require_once __DIR__ . '/../app/core/CustomMailer.php';
-            $site_link = "https://juvenal-esteban-octavalent.ngrok-free.dev/bpms/public/index.php"; 
-            $evt_name = "the Pageant";
-            $e_query = $conn->query("SELECT name FROM events WHERE id = $event_id");
-            if ($row = $e_query->fetch_assoc()) $evt_name = $row['name'];
+            // Update this link for your environment
+            $site_link = "https://juvenal-esteban-octavalent.ngrok-free.dev/bpms_v2/public/index.php"; 
+            
+            $e_query = $conn->query("SELECT title FROM events WHERE id = $event_id");
+            $evt_name = ($row = $e_query->fetch_assoc()) ? $row['title'] : "the Pageant";
 
             $subject = "Official Contestant Registration";
-            $body = "<h2>Welcome, $name!</h2><p>You have been registered for <b>$evt_name</b>.</p><div style='background:#f3f4f6; padding:15px; border-radius:8px; margin:20px 0;'><strong>Credentials:</strong><br>Email: <b>$email</b><br>Password: <b>$pass</b></div><p><a href='$site_link' style='background:#F59E0B; color:white; padding:10px 20px; text-decoration:none; border-radius:5px;'>Login Now</a></p>";
+            $body = "<h2>Welcome, $name!</h2><p>You have been registered for <b>$evt_name</b> as Contestant #$next_num.</p><div style='background:#f3f4f6; padding:15px;'><strong>Credentials:</strong><br>Email: $email<br>Password: $pass</div><p><a href='$site_link'>Login Now</a></p>";
             
             sendCustomEmail($email, $subject, $body);
 
-            // Commit the transaction (Save changes)
             $conn->commit();
             header("Location: ../public/contestants.php?success=Contestant added successfully");
 
         } catch (Exception $e) {
-            // Rollback if anything failed (undoes the INSERTs)
             $conn->rollback();
             header("Location: ../public/contestants.php?error=Database Error: " . $e->getMessage());
         }
     } 
 
-    // --- LOGIC: UPDATE EXISTING CONTESTANT ---
+    // --- UPDATE EXISTING ---
     elseif ($action === 'update') {
-        $id = (int)$_POST['contestant_id'];
+        $u_id = (int)$_POST['contestant_id']; // This is the 'id' from event_contestants (or user_id depending on form)
+        // Note: The form in contestants.php sends 'edit_id' which is 'id' (PK of event_contestants). 
+        // We need 'user_id' to update the 'users' table. 
+        
+        // Fetch user_id from the contestant ID
+        $uid_q = $conn->query("SELECT user_id FROM event_contestants WHERE id = $u_id");
+        $real_user_id = $uid_q->fetch_assoc()['user_id'];
+
         $pass = trim($_POST['password']);
 
         $conn->begin_transaction();
         try {
-            // Step 1: Update Login Info (Update Password only if provided)
+            // 1. Update Login
             if (!empty($pass)) {
                 $hashed_pass = password_hash($pass, PASSWORD_DEFAULT);
                 $stmt1 = $conn->prepare("UPDATE users SET name=?, email=?, password=? WHERE id=?");
-                $stmt1->bind_param("sssi", $name, $email, $hashed_pass, $id);
+                $stmt1->bind_param("sssi", $name, $email, $hashed_pass, $real_user_id);
             } else {
                 $stmt1 = $conn->prepare("UPDATE users SET name=?, email=? WHERE id=?");
-                $stmt1->bind_param("ssi", $name, $email, $id);
+                $stmt1->bind_param("ssi", $name, $email, $real_user_id);
             }
             $stmt1->execute();
 
-            // Step 2: Update Profile Info (Handle optional photo update)
-            $photo_name = null;
+            // 2. Update Profile
+            $photo_sql_part = "";
+            $params = [$event_id, $age, $height, $bust, $waist, $hips, $hometown, $motto];
+            $types = "iiddddss";
+
             if (isset($_FILES['photo']) && $_FILES['photo']['error'] === 0) {
                 $photo_name = uploadPhoto($_FILES['photo']);
+                if ($photo_name) {
+                    $photo_sql_part = ", photo=?";
+                    $params[] = $photo_name;
+                    $types .= "s";
+                }
             }
             
-            if ($photo_name) {
-                $stmt2 = $conn->prepare("UPDATE contestant_details SET event_id=?, age=?, height=?, vital_stats=?, hometown=?, motto=?, photo=? WHERE user_id=?");
-                $stmt2->bind_param("iisssssi", $event_id, $age, $height, $vital_stats, $hometown, $motto, $photo_name, $id);
-            } else {
-                $stmt2 = $conn->prepare("UPDATE contestant_details SET event_id=?, age=?, height=?, vital_stats=?, hometown=?, motto=? WHERE user_id=?");
-                $stmt2->bind_param("iissssi", $event_id, $age, $height, $vital_stats, $hometown, $motto, $id);
-            }
-            
+            $params[] = $real_user_id; 
+            $types .= "i";
+
+            $sql = "UPDATE event_contestants SET event_id=?, age=?, height=?, bust=?, waist=?, hips=?, hometown=?, motto=? $photo_sql_part WHERE user_id=?";
+            $stmt2 = $conn->prepare($sql);
+            $stmt2->bind_param($types, ...$params);
             $stmt2->execute();
+            
             $conn->commit();
             header("Location: ../public/contestants.php?success=Contestant updated");
 
         } catch (Exception $e) {
             $conn->rollback();
-            header("Location: ../public/contestants.php?error=Update Failed");
+            header("Location: ../public/contestants.php?error=Update Failed: " . $e->getMessage());
         }
     }
     exit();
 }
 
 // HELPER: PHOTO UPLOADER
-// Purpose: Validates file type and moves it to the uploads folder.
 function uploadPhoto($file) {
     $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
     $allowed = ['jpg', 'jpeg', 'png'];
     if (in_array($ext, $allowed)) {
         $new_name = "contestant_" . time() . "." . $ext;
         $target = __DIR__ . '/../public/assets/uploads/contestants/' . $new_name;
+        
+        if (!is_dir(dirname($target))) mkdir(dirname($target), 0777, true);
+        
         if (move_uploaded_file($file['tmp_name'], $target)) {
             return $new_name;
         }
@@ -137,24 +171,27 @@ function uploadPhoto($file) {
     return false;
 }
 
-// PART 2: HANDLE GET ACTIONS (Approve / Reject / Archive / Restore)
-// Purpose: Manage the status of contestants.
+// PART 2: HANDLE GET ACTIONS (Approve / Reject / Archive / Restore / Delete)
 if (isset($_GET['action']) && isset($_GET['id'])) {
     
-    $id = (int)$_GET['id'];
+    $target_id = (int)$_GET['id']; // This is 'id' from event_contestants
+    // Get user_id for users table updates
+    $q = $conn->query("SELECT user_id, event_id FROM event_contestants WHERE id = $target_id");
+    $res = $q->fetch_assoc();
+    $target_user_id = $res['user_id'];
+    $event_id = $res['event_id'];
+
     $action = $_GET['action'];
     $my_id = $_SESSION['user_id'];
 
-    // SECURITY CHECK: Authorization
-    // Ensure the current user is actually the manager of the event this contestant belongs to.
+    // --- SECURITY: Authorization Check ---
+    // Ensure the current user manages this event
     $check_auth = $conn->prepare("
-        SELECT u.id FROM users u
-        JOIN contestant_details cd ON u.id = cd.user_id
-        JOIN events e ON cd.event_id = e.id
-        LEFT JOIN event_organizers eo ON (e.id = eo.event_id AND eo.user_id = ? AND eo.status = 'Active')
-        WHERE u.id = ? AND (e.user_id = ? OR eo.id IS NOT NULL)
+        SELECT id FROM events WHERE id = ? AND manager_id = ?
+        UNION
+        SELECT et.id FROM event_teams et WHERE et.event_id = ? AND et.user_id = ? AND et.status='Active'
     ");
-    $check_auth->bind_param("iii", $my_id, $id, $my_id);
+    $check_auth->bind_param("iiii", $event_id, $my_id, $event_id, $my_id);
     $check_auth->execute();
     
     if ($check_auth->get_result()->num_rows === 0) {
@@ -163,55 +200,65 @@ if (isset($_GET['action']) && isset($_GET['id'])) {
     }
 
     // --- ACTION LOGIC ---
+    
     if ($action === 'delete') {
-        // SOFT DELETE: Hide from list completely
-        $stmt = $conn->prepare("UPDATE contestant_details SET is_deleted = 1 WHERE user_id = ?");
-        $stmt->bind_param("i", $id);
+        // [SOFT DELETE LAYER 2]
+        // "Permanent Delete" from UI = Hidden from all lists.
+        // Data stays in DB for integrity.
+        $stmt = $conn->prepare("UPDATE event_contestants SET is_deleted = 1 WHERE id = ?");
+        $stmt->bind_param("i", $target_id);
+        $stmt->execute();
         $msg = "Contestant permanently removed from list.";
-        $tab = 'archived'; // Stay in archive view
+        $tab = 'archived';
 
     } elseif ($action === 'restore') {
-        // Restore to Active status
+        // Restore from Archive
         $conn->begin_transaction();
-        $conn->query("UPDATE users SET status = 'Active' WHERE id = $id");
-        $conn->query("UPDATE contestant_details SET is_deleted = 0 WHERE user_id = $id");
+        $conn->query("UPDATE users SET status = 'Active' WHERE id = $target_user_id");
+        $conn->query("UPDATE event_contestants SET is_deleted = 0, status = 'Active' WHERE id = $target_id");
         $conn->commit();
         $msg = "Contestant restored successfully.";
         $tab = 'archived';
 
     } elseif ($action === 'remove') {
-        // Archive (Move to 'Inactive')
+        // [SOFT DELETE LAYER 1]
+        // Move to Archive (status = Inactive)
         $stmt = $conn->prepare("UPDATE users SET status = 'Inactive' WHERE id = ?");
-        $stmt->bind_param("i", $id);
+        $stmt->bind_param("i", $target_user_id);
+        $stmt->execute();
+        
+        // Also update contestant status to keep in sync
+        $conn->query("UPDATE event_contestants SET status = 'Inactive' WHERE id = $target_id");
+        
         $msg = "Contestant moved to archive.";
         $tab = 'active';
 
     } elseif ($action === 'approve') {
-        // Approve Application
-        $stmt = $conn->prepare("UPDATE users SET status = 'Active' WHERE id = ?");
-        $stmt->bind_param("i", $id);
+        // Approve
+        $conn->begin_transaction();
+        $conn->query("UPDATE users SET status = 'Active' WHERE id = $target_user_id");
+        $conn->query("UPDATE event_contestants SET status = 'Active' WHERE id = $target_id");
+        $conn->commit();
+
         $msg = "Application Approved";
         $tab = 'pending';
 
-        // Send Email (Approve)
+        // Email Notification
         require_once __DIR__ . '/../app/core/CustomMailer.php';
-        $site_link = "https://juvenal-esteban-octavalent.ngrok-free.dev/bpms/public/index.php"; // link for ngrok
-        $u_data = $conn->query("SELECT name, email FROM users WHERE id = $id")->fetch_assoc();
+        $site_link = "https://juvenal-esteban-octavalent.ngrok-free.dev/bpms_v2/public/index.php";
+        $u_data = $conn->query("SELECT name, email FROM users WHERE id = $target_user_id")->fetch_assoc();
         if ($u_data) sendCustomEmail($u_data['email'], "Application ACCEPTED", "<h2>Congrats {$u_data['name']}!</h2><p>Your application is accepted.</p><p><a href='$site_link'>Login</a></p>");
 
     } elseif ($action === 'reject') {
-        $stmt = $conn->prepare("UPDATE users SET status = 'Rejected' WHERE id = ?");
-        $stmt->bind_param("i", $id);
+        // Reject
+        $conn->begin_transaction();
+        $conn->query("UPDATE users SET status = 'Rejected' WHERE id = $target_user_id");
+        $conn->query("UPDATE event_contestants SET status = 'Rejected' WHERE id = $target_id");
+        $conn->commit();
+
         $msg = "Application Rejected";
         $tab = 'pending';
-        
-        // Send Email (Reject)
-        require_once __DIR__ . '/../app/core/CustomMailer.php';
-        $u_data = $conn->query("SELECT name, email FROM users WHERE id = $id")->fetch_assoc();
-        if ($u_data) sendCustomEmail($u_data['email'], "Application Update", "<p>Sorry, your application was not accepted.</p>");
     }
-
-    if (isset($stmt)) $stmt->execute();
     
     header("Location: ../public/contestants.php?view=$tab&success=" . urlencode($msg));
     exit();

@@ -8,26 +8,33 @@ requireRole(['Event Manager', 'Tabulator']); // Allow Tabulator to Lock, but onl
 require_once __DIR__ . '/../app/config/database.php';
 require_once __DIR__ . '/../app/models/ScoreCalculator.php';
 
+// HELPER FUNCTIONS (VALIDATION LOGIC)
+
 // 1. Validate "Funnel Logic" (Configuration)
-function validateAdvancement($conn, $event_id, $current_order, $current_top_n) {
-    if ($current_top_n < 1) return "Invalid Number: You must advance at least 1 contestant.";
+// Ensures you don't accidentally qualify more people than existed in the previous round.
+function validateAdvancement($conn, $event_id, $current_order, $current_qualify_count) {
+    if ($current_qualify_count < 1) return "Invalid Number: You must advance at least 1 contestant.";
 
     $prev_order = $current_order - 1;
+    // If it's the first round, no previous limits apply
     if ($prev_order < 1) return true; 
 
-    $stmt = $conn->prepare("SELECT contestants_to_advance, advancement_rule, title FROM rounds WHERE event_id = ? AND ordering = ?");
+    // Fetch previous round info from 'rounds' table
+    $stmt = $conn->prepare("SELECT qualify_count, type, title FROM rounds WHERE event_id = ? AND ordering = ?");
     $stmt->bind_param("ii", $event_id, $prev_order);
     $stmt->execute();
     $prev = $stmt->get_result()->fetch_assoc();
 
     if ($prev) {
-        $prev_n = (int)$prev['contestants_to_advance'];
+        $prev_n = (int)$prev['qualify_count'];
         
-        if ($prev['advancement_rule'] === 'winner') {
-            return "Action Denied: The previous round '{$prev['title']}' already declared a Final Winner.";
+        // If previous round was a 'Final', the event should have ended.
+        if ($prev['type'] === 'Final') {
+            return "Action Denied: The previous round '{$prev['title']}' was a Final round. You cannot add more rounds after it.";
         }
-        if ($current_top_n >= $prev_n) {
-            return "Invalid Configuration: Winners ($current_top_n) must be LESS than previous round ($prev_n).";
+        // Funnel Logic: You can't qualify 10 people if only 5 remained.
+        if ($current_qualify_count >= $prev_n) {
+            return "Invalid Configuration: Qualifiers ($current_qualify_count) must be LESS than previous round ($prev_n).";
         }
     }
     return true;
@@ -36,21 +43,24 @@ function validateAdvancement($conn, $event_id, $current_order, $current_top_n) {
 // 2. Strict Configuration Check (100% Total)
 function validateRoundConfiguration($conn, $round_id) {
     // A. Check if Segments sum to 100%
-    $stmt = $conn->prepare("SELECT SUM(weight_percentage) as total FROM segments WHERE round_id = ?");
+    // Matches 'segments' table 'weight_percent' column
+    $stmt = $conn->prepare("SELECT SUM(weight_percent) as total FROM segments WHERE round_id = ? AND is_deleted = 0");
     $stmt->bind_param("i", $round_id);
     $stmt->execute();
     $res = $stmt->get_result()->fetch_assoc();
     $seg_total = (float)($res['total'] ?? 0);
 
+    // Allow tiny float margin of error (99.9 - 100.1)
     if ($seg_total < 99.9 || $seg_total > 100.1) {
         return "Cannot Start: Total Segment Weight is $seg_total%. It must be exactly 100%.";
     }
 
     // B. Check if EACH Segment has 100 Points of Criteria
+    // Joins 'segments' and 'criteria'
     $sql = "SELECT s.title, SUM(c.max_score) as criteria_total 
             FROM segments s 
             LEFT JOIN criteria c ON s.id = c.segment_id 
-            WHERE s.round_id = ? 
+            WHERE s.round_id = ? AND s.is_deleted = 0 AND c.is_deleted = 0
             GROUP BY s.id 
             HAVING criteria_total != 100.00 OR criteria_total IS NULL";
     $stmt2 = $conn->prepare($sql);
@@ -71,7 +81,8 @@ function validateRoundConfiguration($conn, $round_id) {
 function checkGatekeeper($conn, $event_id, $round_ordering) {
     // If this is Round 2, 3, etc... we must have 'Qualified' people waiting.
     if ($round_ordering > 1) {
-        $q_check = $conn->query("SELECT COUNT(*) as cnt FROM contestant_details WHERE event_id = $event_id AND status = 'Qualified'")->fetch_assoc();
+        // Matches 'event_contestants' table
+        $q_check = $conn->query("SELECT COUNT(*) as cnt FROM event_contestants WHERE event_id = $event_id AND status = 'Qualified'")->fetch_assoc();
         if ($q_check['cnt'] == 0) {
             return "EMPTY ROSTER: This is Round $round_ordering, but no contestants are marked as 'Qualified'. Did you forget to lock the previous round?";
         }
@@ -79,7 +90,7 @@ function checkGatekeeper($conn, $event_id, $round_ordering) {
     return true;
 }
 
-//  PART A: CRUD OPERATIONS (Returns Redirects for Forms)
+// PART A: CRUD OPERATIONS (Returns Redirects for Forms)
 
 // --- 1. ADD ROUND ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add') {
@@ -88,23 +99,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $event_id = (int)$_POST['event_id'];
     $title    = trim($_POST['title']);
     $order    = (int)$_POST['ordering'];
-    $rule     = $_POST['advancement_rule'];
-    $advance  = (int)$_POST['contestants_to_advance'];
+    $type     = $_POST['type']; // 'Elimination' or 'Final'
+    $qualify  = (int)$_POST['qualify_count'];
 
-    if ($rule === 'winner') $advance = 1;
+    // If Final, usually only 1 winner, but let's trust the input or force 1
+    if ($type === 'Final') $qualify = 1;
 
     // Validate
-    if ($rule === 'top_n') $check = validateAdvancement($conn, $event_id, $order, $advance);
-    else $check = validateAdvancement($conn, $event_id, $order, 1);
-
+    $check = validateAdvancement($conn, $event_id, $order, $qualify);
     if ($check !== true) { header("Location: ../public/rounds.php?error=" . urlencode($check)); exit(); }
 
     // Duplicate Check
     $dupCheck = $conn->query("SELECT id FROM rounds WHERE event_id = $event_id AND ordering = $order");
     if ($dupCheck->num_rows > 0) { header("Location: ../public/rounds.php?error=Order #$order already exists."); exit(); }
 
-    $stmt = $conn->prepare("INSERT INTO rounds (event_id, title, ordering, advancement_rule, contestants_to_advance, status) VALUES (?, ?, ?, ?, ?, 'Pending')");
-    $stmt->bind_param("isisi", $event_id, $title, $order, $rule, $advance);
+    // Matches 'rounds' table structure
+    $stmt = $conn->prepare("INSERT INTO rounds (event_id, title, ordering, type, qualify_count, status) VALUES (?, ?, ?, ?, ?, 'Pending')");
+    $stmt->bind_param("isisi", $event_id, $title, $order, $type, $qualify);
     
     if ($stmt->execute()) header("Location: ../public/rounds.php?success=Round added successfully");
     else header("Location: ../public/rounds.php?error=Failed to add round");
@@ -125,16 +136,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $event_id = $evtCheck['event_id'];
     $title    = trim($_POST['title']);
     $order    = (int)$_POST['ordering'];
-    $rule     = $_POST['advancement_rule'];
-    $advance  = (int)$_POST['contestants_to_advance'];
+    $type     = $_POST['type'];
+    $qualify  = (int)$_POST['qualify_count'];
 
-    if ($rule === 'winner') $advance = 1;
+    if ($type === 'Final') $qualify = 1;
 
-    $check = validateAdvancement($conn, $event_id, $order, $advance);
+    $check = validateAdvancement($conn, $event_id, $order, $qualify);
     if ($check !== true) { header("Location: ../public/rounds.php?error=" . urlencode($check)); exit(); }
 
-    $stmt = $conn->prepare("UPDATE rounds SET title=?, ordering=?, advancement_rule=?, contestants_to_advance=? WHERE id=?");
-    $stmt->bind_param("sisii", $title, $order, $rule, $advance, $round_id);
+    $stmt = $conn->prepare("UPDATE rounds SET title=?, ordering=?, type=?, qualify_count=? WHERE id=?");
+    $stmt->bind_param("sisii", $title, $order, $type, $qualify, $round_id);
 
     if ($stmt->execute()) header("Location: ../public/rounds.php?success=Round updated");
     else header("Location: ../public/rounds.php?error=Update failed");
@@ -151,20 +162,28 @@ if (isset($_GET['action']) && $_GET['action'] === 'delete') {
         header("Location: ../public/rounds.php?error=Cannot delete an Active round."); exit();
     }
 
-    // Safety: Don't delete if scores exist
-    $scoreCheck = $conn->prepare("SELECT id FROM scores WHERE round_id = ? LIMIT 1");
+    // Safety: Don't delete if scores exist. 
+    // Scores link to Criteria -> Segments -> Round
+    $scoreCheck = $conn->prepare("
+        SELECT sc.id FROM scores sc
+        JOIN criteria c ON sc.criteria_id = c.id
+        JOIN segments s ON c.segment_id = s.id
+        WHERE s.round_id = ? LIMIT 1
+    ");
     $scoreCheck->bind_param("i", $id);
     $scoreCheck->execute();
+    
     if ($scoreCheck->get_result()->num_rows > 0) {
         header("Location: ../public/rounds.php?error=Cannot delete: Scores exist."); exit();
     }
 
-    $conn->query("DELETE FROM rounds WHERE id = $id");
+    // We use soft delete based on DB structure
+    $conn->query("UPDATE rounds SET is_deleted = 1 WHERE id = $id");
     header("Location: ../public/rounds.php?success=Round deleted");
     exit();
 }
 
-//  PART B: TRAFFIC CONTROLLER (Returns JSON for JS Fetch)
+// PART B: TRAFFIC CONTROLLER (Returns JSON for JS Fetch)
 
 // --- 4. START ROUND (Replaces set_active) ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'start') {
@@ -210,11 +229,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     // Both Manager and Tabulator can lock
     $round_id = (int)$_POST['round_id'];
 
-    // --- [NEW] SAFETY CHECK: Have all judges submitted? ---
+    // --- SAFETY CHECK: Have all judges submitted? ---
     $evt_id_q = $conn->query("SELECT event_id FROM rounds WHERE id = $round_id")->fetch_assoc();
     $event_id = $evt_id_q['event_id'];
 
-    // 1. Count Active Judges
+    // 1. Count Active Judges for this event
     $j_total = $conn->query("SELECT COUNT(*) as cnt FROM event_judges WHERE event_id = $event_id AND status = 'Active' AND is_deleted = 0")->fetch_assoc()['cnt'];
     
     if ($j_total == 0) {
@@ -222,7 +241,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         exit;
     }
 
-    // 2. Count Submitted Judges
+    // 2. Count Submitted Judges (using judge_round_status table)
     $j_sub = $conn->query("SELECT COUNT(*) as cnt FROM judge_round_status WHERE round_id = $round_id AND status = 'Submitted'")->fetch_assoc()['cnt'];
 
     if ($j_sub < $j_total) {
@@ -237,20 +256,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $rankings = ScoreCalculator::calculate($round_id);
         
         // B. Get Limit
-        $r_info = $conn->query("SELECT contestants_to_advance, event_id FROM rounds WHERE id = $round_id")->fetch_assoc();
-        $limit = (int)$r_info['contestants_to_advance'];
+        $r_info = $conn->query("SELECT qualify_count, event_id, ordering FROM rounds WHERE id = $round_id")->fetch_assoc();
+        $limit = (int)$r_info['qualify_count'];
         $event_id = $r_info['event_id'];
+        $current_order = $r_info['ordering'];
 
-        // C. Clean Slate: Reset everyone to Eliminated first
-        $conn->query("UPDATE contestant_details SET status = 'Eliminated' WHERE event_id = $event_id");
+        // C. Clean Slate: Reset everyone to Eliminated first (Logic: Guilty until proven innocent)
+        // Only touches contestants who were part of this round (Active/Qualified)
+        $conn->query("UPDATE event_contestants SET status = 'Eliminated' WHERE event_id = $event_id AND status IN ('Active', 'Qualified')");
 
         // D. Promote Top N
         $promoted_count = 0;
         foreach ($rankings as $row) {
+            // Using <= because rank 1, 2, 3... are best
             if ($row['rank'] <= $limit) {
-                $cid = $row['contestant']['detail_id'] ?? 0;
+                $cid = $row['contestant_id'] ?? 0;
                 if($cid > 0) {
-                    $conn->query("UPDATE contestant_details SET status = 'Qualified' WHERE id = $cid");
+                    $conn->query("UPDATE event_contestants SET status = 'Qualified' WHERE id = $cid");
                     $promoted_count++;
                 }
             }
@@ -259,17 +281,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         // E. Close Round
         $conn->query("UPDATE rounds SET status = 'Completed' WHERE id = $round_id");
         
-        // F. Snapshot Results (Save history)
-        $conn->query("DELETE FROM round_rankings WHERE round_id = $round_id");
-        $stmt_snap = $conn->prepare("INSERT INTO round_rankings (round_id, contestant_id, total_score, `rank`) VALUES (?, ?, ?, ?)");
-        
-        foreach ($rankings as $row) {
-            $cid = $row['contestant']['detail_id'] ?? 0;
-            $score = str_replace(',', '', $row['final_score']); 
-            $rank = $row['rank'];
-            $stmt_snap->bind_param("iidi", $round_id, $cid, $score, $rank);
-            $stmt_snap->execute();
-        }
+        // F. Initialize Next Round (Optional Logic to Auto-Activate Contestants)
+        // This ensures the next round sees them as 'Active' candidates if needed, 
+        // but 'Qualified' is usually enough for the Gatekeeper check.
 
         $conn->commit();
         echo json_encode(['status' => 'success', 'message' => "Round Locked. Top $promoted_count contestants promoted."]);
@@ -286,10 +300,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     requireRole('Event Manager');
     $round_id = (int)$_POST['round_id'];
 
-    // For this architecture, rely on the Guard.php to prevent data loss.
-    $s_check = $conn->prepare("SELECT id FROM scores WHERE round_id = ? LIMIT 1");
+    // Check for scores via JOIN
+    $s_check = $conn->prepare("
+        SELECT sc.id FROM scores sc
+        JOIN criteria c ON sc.criteria_id = c.id
+        JOIN segments s ON c.segment_id = s.id
+        WHERE s.round_id = ? LIMIT 1
+    ");
     $s_check->bind_param("i", $round_id);
     $s_check->execute();
+
     if ($s_check->get_result()->num_rows > 0) {
         echo json_encode(['status' => 'error', 'message' => "CANNOT STOP: Scores already exist. You must lock it."]);
         exit;
@@ -314,7 +334,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
         // 2. Safety Check: Can we re-open?
         // Cannot re-open Round 1 if Round 2 is already Active/Completed.
-        $next_round_check = $conn->query("SELECT title FROM rounds WHERE event_id = $event_id AND ordering > $order AND status != 'Pending'");
+        $next_round_check = $conn->query("SELECT title FROM rounds WHERE event_id = $event_id AND ordering > $order AND status != 'Pending' AND is_deleted = 0");
         if ($next_round_check->num_rows > 0) {
             $next = $next_round_check->fetch_assoc();
             throw new Exception("CANNOT RE-OPEN: The next round '{$next['title']}' has already started. You must reset that one first.");
@@ -322,12 +342,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
         // 3. The Re-Open Action
         // Set status back to 'Active'. 
-        // Do NOT delete scores (that's the point, we want to keep them).
-        // Do NOT delete 'Qualified' tags yet (they will be overwritten when Re-Lock).
+        // We do NOT delete scores (we want to fix them).
         $conn->query("UPDATE rounds SET status = 'Active' WHERE id = $round_id");
 
+        // 4. Reset Contestant Status
+        // Since we are re-opening, we don't know who qualifies yet. 
+        // Reset everyone involved to 'Active' so they aren't prematurely eliminated/qualified.
+        // (Assuming this is a re-judge situation)
+        $conn->query("UPDATE event_contestants SET status = 'Active' WHERE event_id = $event_id AND status IN ('Qualified', 'Eliminated')");
+
         $conn->commit();
-        echo json_encode(['status' => 'success', 'message' => "Round Re-Opened. You can now adjust settings or scores, then Re-Lock."]);
+        echo json_encode(['status' => 'success', 'message' => "Round Re-Opened. Statuses reset. You can now adjust scores."]);
 
     } catch (Exception $e) {
         $conn->rollback();

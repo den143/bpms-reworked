@@ -9,11 +9,12 @@ $message = "";
 $error = "";
 
 // --- 1. FETCH ASSIGNED EVENT (Must happen first to get Event ID) ---
+// UPDATED: Table 'event_teams' and Column 'title'
 $event_stmt = $conn->prepare("
-    SELECT e.id, e.name, e.venue, e.event_date, e.status 
+    SELECT e.id, e.title, e.venue, e.event_date, e.status 
     FROM events e 
-    JOIN event_organizers eo ON e.id = eo.event_id 
-    WHERE eo.user_id = ? AND eo.status = 'Active' AND e.status = 'Active' 
+    JOIN event_teams et ON e.id = et.event_id 
+    WHERE et.user_id = ? AND et.status = 'Active' AND e.status = 'Active' AND et.is_deleted = 0
     LIMIT 1
 ");
 $event_stmt->bind_param("i", $coordinator_id);
@@ -22,7 +23,7 @@ $event_result = $event_stmt->get_result();
 $active_event = $event_result->fetch_assoc();
 
 $event_id = $active_event['id'] ?? null;
-$event_name = $active_event['name'] ?? "No Active Event Assigned";
+$event_name = $active_event['title'] ?? "No Active Event Assigned";
 
 // --- 2. HANDLE ACTIONS ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -97,7 +98,8 @@ $active_round_id = null;
 $active_round_title = "No Active Round";
 
 if ($event_id) {
-    $round_stmt = $conn->prepare("SELECT id, title FROM rounds WHERE event_id = ? AND status = 'Active' LIMIT 1");
+    // Matches 'rounds' table
+    $round_stmt = $conn->prepare("SELECT id, title FROM rounds WHERE event_id = ? AND status = 'Active' AND is_deleted = 0 LIMIT 1");
     $round_stmt->bind_param("i", $event_id);
     $round_stmt->execute();
     $round_res = $round_stmt->get_result();
@@ -113,6 +115,7 @@ $total_judges = 0;
 $submitted_count = 0;
 
 if ($event_id) {
+    // UPDATED: Added is_deleted check for event_judges
     $sql = "
         SELECT u.id, u.name, u.email, ej.is_chairman, ej.status as judge_role_status,
                COALESCE(MAX(jrs.status), 'Pending') as round_status,
@@ -120,7 +123,7 @@ if ($event_id) {
         FROM users u
         JOIN event_judges ej ON u.id = ej.judge_id
         LEFT JOIN judge_round_status jrs ON u.id = jrs.judge_id AND jrs.round_id = ?
-        WHERE ej.event_id = ? AND ej.status = 'Active'
+        WHERE ej.event_id = ? AND ej.status = 'Active' AND ej.is_deleted = 0
         GROUP BY u.id
         ORDER BY ej.is_chairman DESC, u.name ASC
     ";
@@ -134,7 +137,6 @@ if ($event_id) {
     while ($row = $j_result->fetch_assoc()) {
         $judges[] = $row;
         $total_judges++;
-        // Check strictly for 'Submitted' to update the counter accurately
         if ($row['round_status'] === 'Submitted') {
             $submitted_count++;
         }

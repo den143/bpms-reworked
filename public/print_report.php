@@ -1,4 +1,5 @@
 <?php
+// bpms/public/print_report.php
 require_once __DIR__ . '/../app/core/guard.php';
 requireLogin();
 require_once __DIR__ . '/../app/models/ReportModel.php';
@@ -6,19 +7,21 @@ require_once __DIR__ . '/../app/models/ReportModel.php';
 // 1. Get Event Context
 if (!isset($_GET['event_id'])) {
     require_once __DIR__ . '/../app/config/database.php';
+    // Matches 'events' table
     $chk = $conn->query("SELECT id FROM events WHERE status = 'Active' LIMIT 1");
     if($r = $chk->fetch_assoc()) {
         $event_id = $r['id'];
     } else {
-        die("No Event Selected. Please go to Settings > Print Report.");
+        die("No Active Event Selected. Please go to Settings > Print Report.");
     }
 } else {
     $event_id = (int)$_GET['event_id'];
 }
 
-// 2. Fetch Data
+// 2. Fetch Data using the Model
+// The Model handles all join logic and column aliases (e.g. vital_stats concatenation)
 $data = ReportModel::generate($event_id);
-if(!$data) die("Event not found.");
+if(!$data) die("Event data not found.");
 
 $evt = $data['event'];
 ?>
@@ -27,7 +30,7 @@ $evt = $data['event'];
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Official Report - <?= htmlspecialchars($evt['name']) ?></title>
+    <title>Official Report - <?= htmlspecialchars($evt['title']) ?></title>
     <style>
         body { font-family: 'Times New Roman', serif; color: #000; background: #fff; margin: 0; padding: 20px; }
         
@@ -83,8 +86,10 @@ $evt = $data['event'];
         <button onclick="window.print()" style="padding:10px 20px; font-weight:bold; cursor:pointer;">🖨️ PRINT OFFICIAL REPORT</button>
         <div style="font-size:11px; margin-top:5px;">Recommended: A4 Paper, Landscape Mode (for Matrix), Portrait (for Summary)</div>
     </div>
-    <div class="no-print" style="height:60px;"></div> <div class="report-header text-center">
-        <h1 class="event-title"><?= htmlspecialchars($evt['name']) ?></h1>
+    <div class="no-print" style="height:60px;"></div>
+
+    <div class="report-header text-center">
+        <h1 class="event-title"><?= htmlspecialchars($evt['title']) ?></h1>
         <div class="event-meta">
             <?= date('F j, Y', strtotime($evt['event_date'])) ?> | <?= htmlspecialchars($evt['venue']) ?>
         </div>

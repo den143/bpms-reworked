@@ -6,7 +6,8 @@ class AwardCalculator {
     public static function getAwardsList($event_id) {
         global $conn;
         
-        $sql = "SELECT * FROM awards WHERE event_id = ? AND is_deleted = 0 ORDER BY type, title";
+        // Matches 'awards' table
+        $sql = "SELECT * FROM awards WHERE event_id = ? AND is_deleted = 0 ORDER BY ordering ASC";
         $stmt = $conn->prepare($sql);
         $stmt->bind_param("i", $event_id);
         $stmt->execute();
@@ -18,26 +19,25 @@ class AwardCalculator {
             $winner = null;
             $candidates = []; 
 
-            switch ($award['source_type']) {
+            switch ($award['selection_method']) {
                 case 'Manual':
                     $winner = self::getStoredWinner($award['id']);
                     break;
 
-                case 'Audience':
-                    // UPDATED: Use the 'tickets' table directly
+                case 'Audience_Vote':
                     $winner = self::getAudienceWinner($event_id);
                     $candidates = self::getAudienceTally($event_id);
                     break;
 
-                case 'Segment':
-                    if ($award['source_id']) {
-                        $winner = self::getSegmentWinner($award['source_id']);
+                case 'Highest_Segment':
+                    if ($award['linked_segment_id']) {
+                        $winner = self::getSegmentWinner($award['linked_segment_id']);
                     }
                     break;
 
-                case 'Round':
-                    if ($award['source_id']) {
-                        $winner = self::getRoundWinner($award['source_id']);
+                case 'Highest_Round':
+                    if ($award['linked_round_id']) {
+                        $winner = self::getRoundWinner($award['linked_round_id']);
                     }
                     break;
             }
@@ -54,11 +54,11 @@ class AwardCalculator {
 
     private static function getStoredWinner($award_id) {
         global $conn;
-        // Manual winners are stored in award_winners using contestant_details.id
-        $sql = "SELECT cd.id, u.name, cd.photo 
+        // Manual winners are stored in 'award_winners' linked to 'event_contestants'
+        $sql = "SELECT ec.id, u.name, ec.photo, aw.title_label 
                 FROM award_winners aw 
-                JOIN contestant_details cd ON aw.contestant_id = cd.id
-                JOIN users u ON cd.user_id = u.id 
+                JOIN event_contestants ec ON aw.contestant_id = ec.id
+                JOIN users u ON ec.user_id = u.id 
                 WHERE aw.award_id = ?";
         $stmt = $conn->prepare($sql);
         $stmt->bind_param("i", $award_id);
@@ -68,14 +68,13 @@ class AwardCalculator {
 
     private static function getAudienceWinner($event_id) {
         global $conn;
-        // UPDATED: Query the 'tickets' table
-        // Assumes voted_contestant_id refers to contestant_details.id
-        $sql = "SELECT cd.id, u.name, cd.photo, COUNT(t.id) as votes 
-                FROM tickets t 
-                JOIN contestant_details cd ON t.voted_contestant_id = cd.id 
-                JOIN users u ON cd.user_id = u.id 
-                WHERE t.event_id = ? AND t.status = 'Used' AND t.voted_contestant_id IS NOT NULL
-                GROUP BY t.voted_contestant_id 
+        // Matches 'audience_votes' table structure
+        $sql = "SELECT ec.id, u.name, ec.photo, COUNT(av.id) as votes 
+                FROM audience_votes av 
+                JOIN event_contestants ec ON av.contestant_id = ec.id 
+                JOIN users u ON ec.user_id = u.id 
+                WHERE ec.event_id = ? 
+                GROUP BY av.contestant_id 
                 ORDER BY votes DESC LIMIT 1";
         $stmt = $conn->prepare($sql);
         $stmt->bind_param("i", $event_id);
@@ -85,13 +84,13 @@ class AwardCalculator {
 
     private static function getAudienceTally($event_id) {
         global $conn;
-        // UPDATED: Query the 'tickets' table
-        $sql = "SELECT cd.id, u.name, COUNT(t.id) as votes 
-                FROM tickets t 
-                JOIN contestant_details cd ON t.voted_contestant_id = cd.id 
-                JOIN users u ON cd.user_id = u.id 
-                WHERE t.event_id = ? AND t.status = 'Used' AND t.voted_contestant_id IS NOT NULL
-                GROUP BY t.voted_contestant_id 
+        // UPDATED: Same logic as above but returns list for charts
+        $sql = "SELECT ec.id, u.name, COUNT(av.id) as votes 
+                FROM audience_votes av 
+                JOIN event_contestants ec ON av.contestant_id = ec.id 
+                JOIN users u ON ec.user_id = u.id 
+                WHERE ec.event_id = ? 
+                GROUP BY av.contestant_id 
                 ORDER BY votes DESC";
         $stmt = $conn->prepare($sql);
         $stmt->bind_param("i", $event_id);
@@ -101,13 +100,13 @@ class AwardCalculator {
 
     private static function getSegmentWinner($segment_id) {
         global $conn;
-        // Segment scores are in 'scores' table using user_id
-        // We calculate total, then map back to contestant_details for display
-        $sql = "SELECT cd.id, u.name, cd.photo, SUM(s.score_value) as total_score 
+        // 1. 'scores' table now links directly to 'event_contestants' via 'contestant_id'
+        // 2. Joining 'criteria' to filter by 'segment_id'
+        $sql = "SELECT ec.id, u.name, ec.photo, SUM(s.score_value) as total_score 
                 FROM scores s 
                 JOIN criteria c ON s.criteria_id = c.id 
-                JOIN contestant_details cd ON s.contestant_id = cd.user_id -- Link score(user_id) to detail(user_id)
-                JOIN users u ON cd.user_id = u.id 
+                JOIN event_contestants ec ON s.contestant_id = ec.id 
+                JOIN users u ON ec.user_id = u.id 
                 WHERE c.segment_id = ? 
                 GROUP BY s.contestant_id 
                 ORDER BY total_score DESC LIMIT 1";
@@ -119,11 +118,11 @@ class AwardCalculator {
 
     private static function getRoundWinner($round_id) {
         global $conn;
-        // Round rankings use contestant_id which links to contestant_details.id
-        $sql = "SELECT cd.id, u.name, cd.photo, rr.total_score 
+        // Uses 'event_contestants' (ec)
+        $sql = "SELECT ec.id, u.name, ec.photo, rr.total_score 
                 FROM round_rankings rr 
-                JOIN contestant_details cd ON rr.contestant_id = cd.id 
-                JOIN users u ON cd.user_id = u.id 
+                JOIN event_contestants ec ON rr.contestant_id = ec.id 
+                JOIN users u ON ec.user_id = u.id 
                 WHERE rr.round_id = ? AND rr.rank = 1";
         $stmt = $conn->prepare($sql);
         $stmt->bind_param("i", $round_id);

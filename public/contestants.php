@@ -23,7 +23,8 @@ if ($view === 'pending') {
 // Model fetches data (filtering out is_deleted=1)
 $contestants = Contestant::getAllByManager($my_id, $status_filter, $search);
 
-$evt_stmt = $conn->prepare("SELECT id, name FROM events WHERE user_id = ? AND status = 'Active'");
+// UPDATED: Column 'title' instead of 'name'
+$evt_stmt = $conn->prepare("SELECT id, title FROM events WHERE manager_id = ? AND status = 'Active'");
 $evt_stmt->bind_param("i", $my_id);
 $evt_stmt->execute();
 $my_events = $evt_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
@@ -157,21 +158,6 @@ $my_events = $evt_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
                                 <div class="card-body">
                                     <div class="card-title"><?= htmlspecialchars($c['name']) ?></div>
                                     <div class="card-subtitle"><?= htmlspecialchars($c['hometown']) ?></div>
-
-                                    <?php if($view === 'active'): ?>
-                                        <?php 
-                                            $comp_status = $c['competition_status'] ?? 'Active'; // You need to fetch this in your Model later
-                                            $badge_color = match($comp_status) {
-                                                'Qualified' => '#059669', // Green
-                                                'Eliminated' => '#dc2626', // Red
-                                                default => '#2563eb' // Blue
-                                            };
-                                        ?>
-                                        <div style="font-size:10px; font-weight:bold; color:white; background:<?= $badge_color ?>; 
-                                                    padding:2px 8px; border-radius:10px; display:inline-block; margin-bottom:8px;">
-                                            <?= strtoupper($comp_status) ?>
-                                        </div>
-                                    <?php endif; ?>
                                     
                                     <div class="stats-row">
                                         <span>Age: <?= $c['age'] ?></span>
@@ -180,6 +166,9 @@ $my_events = $evt_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
                                     <div class="stats-row">
                                         <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"><?= htmlspecialchars($c['event_name']) ?></span>
                                     </div>
+
+                                    <?php if (!empty($c['motto'])): ?>
+                                        <?php endif; ?>
                                 </div>
 
                                 <div class="card-actions">
@@ -242,10 +231,12 @@ $my_events = $evt_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
             <h3>Add New Contestant</h3>
             <form action="../api/contestant.php" method="POST" enctype="multipart/form-data">
                 <input type="hidden" name="action" value="create">
-                <div class="form-group"><label>Event</label><select name="event_id" class="form-control" required><?php foreach ($my_events as $evt): ?><option value="<?= $evt['id'] ?>"><?= htmlspecialchars($evt['name']) ?></option><?php endforeach; ?></select></div>
+                <div class="form-group"><label>Event</label><select name="event_id" class="form-control" required><?php foreach ($my_events as $evt): ?><option value="<?= $evt['id'] ?>"><?= htmlspecialchars($evt['title']) ?></option><?php endforeach; ?></select></div>
                 <div class="form-row"><div class="form-group"><label>Name</label><input type="text" name="name" class="form-control" required></div><div class="form-group"><label>Age</label><input type="number" name="age" class="form-control" required></div></div>
                 <div class="form-row"><div class="form-group"><label>Email</label><input type="email" name="email" class="form-control" required></div><div class="form-group"><label>Password</label><input type="password" name="password" class="form-control" required></div></div>
-                <div class="form-row"><div class="form-group"><label>Height</label><input type="text" name="height" class="form-control"></div><div class="form-group"><label>Vital Stats</label><input type="text" name="vital_stats" class="form-control"></div></div>
+                <div class="form-row"><div class="form-group"><label>Height</label><input type="text" name="height" class="form-control"></div><div class="form-group"><label>Bust</label><input type="number" step="0.1" name="bust" class="form-control" placeholder="34"></div></div>
+                <div class="form-row"><div class="form-group"><label>Waist</label><input type="number" step="0.1" name="waist" class="form-control" placeholder="24"></div><div class="form-group"><label>Hips</label><input type="number" step="0.1" name="hips" class="form-control" placeholder="34"></div></div>
+                
                 <div class="form-group"><label>Hometown</label><input type="text" name="hometown" class="form-control" required></div>
                 <div class="form-group"><label>Motto</label><input type="text" name="motto" class="form-control"></div>
                 <div class="form-group"><label>Photo</label><input type="file" name="photo" class="form-control" accept="image/*" required></div>
@@ -260,14 +251,15 @@ $my_events = $evt_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
             <form action="../api/contestant.php" method="POST" enctype="multipart/form-data">
                 <input type="hidden" name="action" value="update">
                 <input type="hidden" name="contestant_id" id="edit_id">
-                <div class="form-group"><label>Event</label><select name="event_id" id="edit_event_id" class="form-control" required><?php foreach ($my_events as $evt): ?><option value="<?= $evt['id'] ?>"><?= htmlspecialchars($evt['name']) ?></option><?php endforeach; ?></select></div>
+                <div class="form-group"><label>Event</label><select name="event_id" id="edit_event_id" class="form-control" required><?php foreach ($my_events as $evt): ?><option value="<?= $evt['id'] ?>"><?= htmlspecialchars($evt['title']) ?></option><?php endforeach; ?></select></div>
                 <div class="form-row"><div class="form-group"><label>Name</label><input type="text" name="name" id="edit_name" class="form-control" required></div><div class="form-group"><label>Age</label><input type="number" name="age" id="edit_age" class="form-control" required></div></div>
                 <div class="form-row"><div class="form-group"><label>Email</label><input type="email" name="email" id="edit_email" class="form-control" required></div><div class="form-group"><label>Change Password</label><input type="password" name="password" id="editPass" class="form-control" placeholder="Optional"></div></div>
-                <div class="form-row"><div class="form-group"><label>Height</label><input type="text" name="height" id="edit_height" class="form-control"></div><div class="form-group"><label>Vital Stats</label><input type="text" name="vital_stats" id="edit_vital" class="form-control"></div></div>
+                <div class="form-row"><div class="form-group"><label>Height</label><input type="text" name="height" id="edit_height" class="form-control"></div><div class="form-group"><label>Bust</label><input type="number" step="0.1" name="bust" id="edit_bust" class="form-control"></div></div>
+                <div class="form-row"><div class="form-group"><label>Waist</label><input type="number" step="0.1" name="waist" id="edit_waist" class="form-control"></div><div class="form-group"><label>Hips</label><input type="number" step="0.1" name="hips" id="edit_hips" class="form-control"></div></div>
+                
                 <div class="form-group"><label>Hometown</label><input type="text" name="hometown" id="edit_hometown" class="form-control" required></div>
                 <div class="form-group"><label>Motto</label><input type="text" name="motto" id="edit_motto" class="form-control"></div>
                 <div class="form-group" id="photoGroup"><label>Update Photo</label><input type="file" name="photo" class="form-control" accept="image/*"></div>
-                
                 <div style="text-align:right; margin-top:15px;" id="modalActions">
                     <button type="button" onclick="closeModal('editModal')" style="padding:8px 15px; border:none; background:#e5e7eb; border-radius:4px; cursor:pointer;">Cancel</button>
                     <button type="submit" style="padding:8px 15px; border:none; background:#F59E0B; color:white; border-radius:4px; font-weight:bold; cursor:pointer;">Save Changes</button>
@@ -287,9 +279,19 @@ $my_events = $evt_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
             document.getElementById('edit_email').value = c.email;
             document.getElementById('edit_age').value = c.age;
             document.getElementById('edit_height').value = c.height;
-            document.getElementById('edit_vital').value = c.vital_stats;
             document.getElementById('edit_hometown').value = c.hometown;
             document.getElementById('edit_motto').value = c.motto;
+            
+            // PARSE VITAL STATS (Format: "34.0-24.0-34.0")
+            if (c.vital_stats) {
+                const parts = c.vital_stats.split('-');
+                if(parts.length === 3) {
+                    document.getElementById('edit_bust').value = parts[0];
+                    document.getElementById('edit_waist').value = parts[1];
+                    document.getElementById('edit_hips').value = parts[2];
+                }
+            }
+            
             openModal('editModal');
         }
 

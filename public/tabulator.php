@@ -8,7 +8,8 @@ $user_id = $_SESSION['user_id'];
 $user_role = $_SESSION['role'];
 
 // 2. GET ACTIVE EVENT
-$evt_sql = "SELECT id, name FROM events WHERE status = 'Active' LIMIT 1";
+// UPDATED: Column 'title' instead of 'name'
+$evt_sql = "SELECT id, title FROM events WHERE status = 'Active' LIMIT 1";
 $event = $conn->query($evt_sql)->fetch_assoc();
 
 if (!$event) {
@@ -21,7 +22,8 @@ if (!$event) {
 $event_id = $event['id'];
 
 // 3. GET ROUNDS
-$rnd_sql = "SELECT id, title, status FROM rounds WHERE event_id = $event_id ORDER BY ordering";
+// UPDATED: Added is_deleted check
+$rnd_sql = "SELECT id, title, status FROM rounds WHERE event_id = $event_id AND is_deleted = 0 ORDER BY ordering";
 $rounds = $conn->query($rnd_sql)->fetch_all(MYSQLI_ASSOC);
 
 // Default to the first round if none selected
@@ -33,7 +35,7 @@ $current_round_id = isset($_GET['round_id']) ? (int)$_GET['round_id'] : ($rounds
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tabulation - <?= htmlspecialchars($event['name']) ?></title>
+    <title>Tabulation - <?= htmlspecialchars($event['title']) ?></title>
     <link rel="stylesheet" href="assets/css/style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
@@ -145,7 +147,7 @@ $current_round_id = isset($_GET['round_id']) ? (int)$_GET['round_id'] : ($rounds
             
             /* 5. HEADER & FOOTER */
             .tally-card::before, #awardsView::before {
-                content: "OFFICIAL RESULT SHEET: <?= strtoupper(htmlspecialchars($event['name'])) ?>";
+                content: "OFFICIAL RESULT SHEET: <?= strtoupper(htmlspecialchars($event['title'])) ?>";
                 display: block; text-align: center; font-weight: bold; font-size: 16pt; margin-bottom: 5px; 
             }
             .tally-card::after, #awardsView::after {

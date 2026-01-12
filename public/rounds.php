@@ -7,7 +7,8 @@ require_once __DIR__ . '/../app/config/database.php';
 $manager_id = $_SESSION['user_id'];
 
 // 1. Get Active Event
-$evt_sql = "SELECT id, name FROM events WHERE user_id = ? AND status = 'Active' LIMIT 1";
+// UPDATED: Column 'title' instead of 'name'
+$evt_sql = "SELECT id, title FROM events WHERE manager_id = ? AND status = 'Active' LIMIT 1";
 $evt_stmt = $conn->prepare($evt_sql);
 $evt_stmt->bind_param("i", $manager_id);
 $evt_stmt->execute();
@@ -19,7 +20,8 @@ $previous_top_n = "N/A";
 
 if ($active_event) {
     $event_id = $active_event['id'];
-    $r_query = $conn->query("SELECT * FROM rounds WHERE event_id = $event_id ORDER BY ordering ASC");
+    // UPDATED: Added is_deleted check
+    $r_query = $conn->query("SELECT * FROM rounds WHERE event_id = $event_id AND is_deleted = 0 ORDER BY ordering ASC");
     $rounds = $r_query->fetch_all(MYSQLI_ASSOC);
 
     // Auto-Calculate Next Order for the "Add" modal
@@ -108,7 +110,7 @@ if ($active_event) {
                 <div class="page-header">
                     <div>
                         <h2 style="color:#111827;">Competition Rounds</h2>
-                        <p style="color:#6b7280; font-size:14px;">Event: <strong><?= htmlspecialchars($active_event['name']) ?></strong></p>
+                        <p style="color:#6b7280; font-size:14px;">Event: <strong><?= htmlspecialchars($active_event['title']) ?></strong></p>
                     </div>
                     <button class="btn-add" onclick="openAddModal()"><i class="fas fa-plus"></i> Add Round</button>
                 </div>
@@ -143,7 +145,7 @@ if ($active_event) {
                                         <i class="fas fa-play"></i> START
                                     </button>
                                     
-                                    <button class="btn-icon" onclick='openEditModal(<?= json_encode($r) ?>)' title="Edit">
+                                    <button class="btn-icon" onclick='openEditModal(<?= json_encode($r, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)' title="Edit">
                                         <i class="fas fa-pen"></i>
                                     </button>
                                     <a href="../api/rounds.php?action=delete&id=<?= $r['id'] ?>" class="btn-icon" style="color:#dc2626;" onclick="return confirm('Delete this round?')" title="Delete">

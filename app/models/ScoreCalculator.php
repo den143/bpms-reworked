@@ -1,4 +1,7 @@
 <?php
+// app/models/ScoreCalculator.php
+// Purpose: The math engine. Calculates weighted averages and ranks contestants.
+
 require_once __DIR__ . '/../config/database.php';
 
 class ScoreCalculator {
@@ -9,29 +12,34 @@ class ScoreCalculator {
         $db = self::db();
         $round_id = (int)$round_id;
 
-        // 1. Fetch Round Context (To determine if Gatekeeper is needed)
+        // 1. Fetch Round Context
         $r_data = $db->query("SELECT ordering, event_id FROM rounds WHERE id = $round_id")->fetch_assoc();
         $is_prelim = ($r_data['ordering'] == 1);
+        $event_id = $r_data['event_id'];
 
         // 2. GATEKEEPER LOGIC (The Filter)
-        // Round 1 (Prelims): Allow Everyone (Active, Qualified, or Eliminated - history preserved)
-        // Round 2+ (Finals): Allow ONLY 'Qualified' ... OR ... those who actually competed (have scores).
-        // (The 'OR' clause ensures that when you Lock a round and losers become 'Eliminated', 
-        // they don't vanish from the Result Sheet immediately).
-        
+        // Decides who appears on the result sheet.
+        // Logic: Show anyone "Qualified" OR anyone who has at least one score for this round.
+        // We use 'ec' alias for event_contestants.
         $status_clause = "";
         if (!$is_prelim) {
             $status_clause = "AND (
-                cd.status = 'Qualified' 
-                OR EXISTS (SELECT 1 FROM scores s WHERE s.contestant_id = u.id AND s.round_id = $round_id)
+                ec.status = 'Qualified' 
+                OR EXISTS (
+                    SELECT 1 FROM scores sc
+                    JOIN criteria c ON sc.criteria_id = c.id
+                    JOIN segments s ON c.segment_id = s.id
+                    WHERE sc.contestant_id = ec.id AND s.round_id = $round_id
+                )
             )";
         }
 
         // 3. Fetch Active Judges
+        // Joins 'event_judges' -> 'users'
         $judges = $db->query("SELECT u.id, u.name 
                               FROM users u
                               JOIN event_judges ej ON u.id = ej.judge_id 
-                              WHERE ej.event_id = {$r_data['event_id']} 
+                              WHERE ej.event_id = $event_id 
                               AND ej.status = 'Active' 
                               AND ej.is_deleted = 0")->fetch_all(MYSQLI_ASSOC);
         
@@ -39,32 +47,40 @@ class ScoreCalculator {
         $judge_count = count($judge_ids);
 
         // 4. Fetch Contestants (Applying the Gatekeeper)
-        $c_sql = "SELECT u.id as user_id, cd.id as detail_id, u.name, cd.contestant_number, cd.photo 
+        $c_sql = "SELECT u.id as user_id, ec.id as detail_id, u.name, ec.contestant_number, ec.photo 
                   FROM users u
-                  JOIN contestant_details cd ON u.id = cd.user_id
-                  WHERE cd.event_id = {$r_data['event_id']} 
+                  JOIN event_contestants ec ON u.id = ec.user_id
+                  WHERE ec.event_id = $event_id 
                   AND u.status = 'Active' 
-                  AND cd.is_deleted = 0
+                  AND ec.is_deleted = 0
                   $status_clause
-                  ORDER BY cd.contestant_number ASC";
+                  ORDER BY ec.contestant_number ASC";
                   
         $contestants = $db->query($c_sql)->fetch_all(MYSQLI_ASSOC);
 
-        // 5. Fetch Segments & Criteria (OPTIMIZATION: Fetch ALL criteria once)
-        $segments = $db->query("SELECT id, weight_percentage FROM segments WHERE round_id = $round_id ORDER BY ordering")->fetch_all(MYSQLI_ASSOC);
+        // 5. Fetch Segments & Criteria
+        $segments = $db->query("SELECT id, weight_percent FROM segments WHERE round_id = $round_id AND is_deleted = 0 ORDER BY ordering")->fetch_all(MYSQLI_ASSOC);
         
         $all_criteria = $db->query("SELECT id, segment_id FROM criteria 
-                                    WHERE segment_id IN (SELECT id FROM segments WHERE round_id = $round_id)")->fetch_all(MYSQLI_ASSOC);
+                                    WHERE is_deleted = 0 AND segment_id IN (SELECT id FROM segments WHERE round_id = $round_id)")->fetch_all(MYSQLI_ASSOC);
 
-        // Map criteria by Segment ID to avoid queries in the loop
+        // Map criteria by Segment ID
         $criteria_by_segment = [];
         foreach ($all_criteria as $c) {
             $criteria_by_segment[$c['segment_id']][] = $c['id'];
         }
 
-        // 6. Fetch Scores Map
-        $scores_raw = $db->query("SELECT * FROM scores WHERE round_id = $round_id")->fetch_all(MYSQLI_ASSOC);
+        // 6. Fetch Scores Map (CRITICAL UPDATE)
+        $sql_scores = "SELECT sc.contestant_id, sc.judge_id, sc.criteria_id, sc.score_value
+                       FROM scores sc
+                       JOIN criteria c ON sc.criteria_id = c.id
+                       JOIN segments s ON c.segment_id = s.id
+                       WHERE s.round_id = $round_id";
+                       
+        $scores_raw = $db->query($sql_scores)->fetch_all(MYSQLI_ASSOC);
+        
         $score_map = [];
+        // Map: [ContestantID][JudgeID][CriteriaID] = Score
         foreach ($scores_raw as $s) {
             $score_map[$s['contestant_id']][$s['judge_id']][$s['criteria_id']] = (float)$s['score_value']; 
         }
@@ -73,7 +89,8 @@ class ScoreCalculator {
         $ranking = [];
 
         foreach ($contestants as $c) {
-            $uid = $c['user_id'];
+            // Note: $c['detail_id'] matches 'event_contestants.id' which is used in scores table
+            $cid = $c['detail_id']; 
             $grand_total = 0;
             $judge_totals = [];
 
@@ -82,13 +99,14 @@ class ScoreCalculator {
                 
                 foreach ($segments as $seg) {
                     $sid = $seg['id'];
-                    $weight = (float)$seg['weight_percentage'] / 100;
+                    // Matches 'weight_percent' column
+                    $weight = (float)$seg['weight_percent'] / 100;
                     
                     $criteria_ids = $criteria_by_segment[$sid] ?? [];
                     
                     $seg_score_sum = 0;
                     foreach ($criteria_ids as $crit_id) {
-                        $val = $score_map[$uid][$jid][$crit_id] ?? 0;
+                        $val = $score_map[$cid][$jid][$crit_id] ?? 0;
                         $seg_score_sum += $val;
                     }
                     
@@ -101,7 +119,7 @@ class ScoreCalculator {
 
             $final_score = ($judge_count > 0) ? $grand_total / $judge_count : 0;
 
-            // Prepare Display Data
+            // Format for display
             $formatted_judge_scores = [];
             foreach($judge_totals as $j_id => $sc) {
                 $formatted_judge_scores[$j_id] = number_format($sc, 2);
@@ -116,15 +134,16 @@ class ScoreCalculator {
             ];
         }
 
-        // 8. Sort using RAW float score for accuracy
+        // 8. Sort (High to Low)
         usort($ranking, function($a, $b) { 
             return $b['raw_score'] <=> $a['raw_score']; 
         });
 
-        // 9. Rank
+        // 9. Assign Ranks (Handle Ties)
         $rank = 1;
         foreach ($ranking as $key => $item) {
-            if ($key > 0 && $item['final_score'] == $ranking[$key-1]['final_score']) {
+            // If score is same as previous, give same rank (1, 2, 2, 4...)
+            if ($key > 0 && abs($item['raw_score'] - $ranking[$key-1]['raw_score']) < 0.001) {
                 $ranking[$key]['rank'] = $ranking[$key-1]['rank'];
             } else {
                 $ranking[$key]['rank'] = $rank;
@@ -139,10 +158,19 @@ class ScoreCalculator {
         $db = self::db();
         $round_id = (int)$round_id;
         
-        $segments = $db->query("SELECT id, title, weight_percentage FROM segments WHERE round_id = $round_id ORDER BY ordering")->fetch_all(MYSQLI_ASSOC);
+        // Debugging / Audit Tool Logic
+        $segments = $db->query("SELECT id, title, weight_percent FROM segments WHERE round_id = $round_id ORDER BY ordering")->fetch_all(MYSQLI_ASSOC);
+        
         $criteria = $db->query("SELECT c.id, c.title, c.max_score, c.segment_id FROM criteria c JOIN segments s ON c.segment_id = s.id WHERE s.round_id = $round_id ORDER BY c.id")->fetch_all(MYSQLI_ASSOC);
+        
         $judges = $db->query("SELECT u.id, u.name FROM users u JOIN event_judges ej ON u.id = ej.judge_id WHERE ej.event_id = (SELECT event_id FROM rounds WHERE id=$round_id) AND ej.status='Active' AND ej.is_deleted=0")->fetch_all(MYSQLI_ASSOC);
-        $scores = $db->query("SELECT judge_id, contestant_id, criteria_id, score_value FROM scores WHERE round_id = $round_id")->fetch_all(MYSQLI_ASSOC);
+        
+        $sql_scores = "SELECT sc.judge_id, sc.contestant_id, sc.criteria_id, sc.score_value 
+                       FROM scores sc
+                       JOIN criteria c ON sc.criteria_id = c.id
+                       JOIN segments s ON c.segment_id = s.id
+                       WHERE s.round_id = $round_id";
+        $scores = $db->query($sql_scores)->fetch_all(MYSQLI_ASSOC);
         
         $mapped_scores = [];
         foreach($scores as $s) {

@@ -13,8 +13,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     }
 
     // LOGIC: Validate Ticket
-    // We fetch the ticket's status to see if it's still valid for entry.
-    $stmt = $conn->prepare("SELECT id, status, voted_contestant_id FROM tickets WHERE code = ?");
+    $stmt = $conn->prepare("SELECT id, status, event_id FROM tickets WHERE ticket_code = ?");
     $stmt->bind_param("s", $code);
     $stmt->execute();
     $result = $stmt->get_result();
@@ -23,18 +22,18 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         $ticket = $result->fetch_assoc();
 
         // CHECK: Is the ticket expired?
-        // If the status is 'Used', it means they have presumably finished their session or vote
-        // and are no longer allowed to log in.
+        // Logic: If status is 'Used', it means they have voted.
         if ($ticket['status'] === 'Used') {
-            header("Location: ../public/index.php?error=This ticket has expired.");
+            header("Location: ../public/index.php?error=This ticket has already been used.");
             exit();
         }
 
         // LOGIN SUCCESS
-        // We store the ticket ID as the 'user_id' for the session since Audience members don't have user accounts.
-        $_SESSION['user_id'] = $ticket['id'];
-        $_SESSION['role'] = 'Audience';
+        // We store the ticket ID as the 'user_id' for the session.
+        $_SESSION['user_id']     = $ticket['id'];
+        $_SESSION['role']        = 'Audience';
         $_SESSION['ticket_code'] = $code;
+        $_SESSION['event_id']    = $ticket['event_id']; // Added for convenience in dashboard
         
         header("Location: ../public/audience_dashboard.php");
         exit();

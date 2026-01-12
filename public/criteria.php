@@ -12,7 +12,8 @@ require_once __DIR__ . '/../app/config/database.php';
 $manager_id = $_SESSION['user_id'];
 
 // 1. Get Active Event
-$evt_sql = "SELECT id, name FROM events WHERE user_id = ? AND status = 'Active' LIMIT 1";
+// UPDATED: Column 'title' instead of 'name'
+$evt_sql = "SELECT id, title FROM events WHERE manager_id = ? AND status = 'Active' LIMIT 1";
 $evt_stmt = $conn->prepare($evt_sql);
 $evt_stmt->bind_param("i", $manager_id);
 $evt_stmt->execute();
@@ -26,7 +27,9 @@ $next_seg_order = 1;
 
 if ($active_event) {
     $event_id = $active_event['id'];
-    $r_query = $conn->query("SELECT * FROM rounds WHERE event_id = $event_id ORDER BY ordering ASC");
+    
+    // UPDATED: Added is_deleted check
+    $r_query = $conn->query("SELECT * FROM rounds WHERE event_id = $event_id AND is_deleted = 0 ORDER BY ordering ASC");
     if ($r_query) $rounds = $r_query->fetch_all(MYSQLI_ASSOC);
 
     if ($active_round_id === 0 && !empty($rounds)) {
@@ -34,7 +37,7 @@ if ($active_event) {
     }
 
     if ($active_round_id > 0) {
-        $s_query = $conn->query("SELECT * FROM segments WHERE round_id = $active_round_id ORDER BY ordering ASC");
+        $s_query = $conn->query("SELECT * FROM segments WHERE round_id = $active_round_id AND is_deleted = 0 ORDER BY ordering ASC");
         if ($s_query) {
             $active_segments = $s_query->fetch_all(MYSQLI_ASSOC);
             
@@ -46,7 +49,8 @@ if ($active_event) {
 
             foreach ($active_segments as &$seg) {
                 $sid = $seg['id'];
-                $c_query = $conn->query("SELECT * FROM criteria WHERE segment_id = $sid ORDER BY ordering ASC");
+                // UPDATED: Added is_deleted check
+                $c_query = $conn->query("SELECT * FROM criteria WHERE segment_id = $sid AND is_deleted = 0 ORDER BY ordering ASC");
                 $seg['criteria'] = $c_query ? $c_query->fetch_all(MYSQLI_ASSOC) : [];
                 
                 $total_round_percentage += $seg['weight_percentage'];
@@ -207,7 +211,7 @@ if ($active_event) {
                                                     <td><?= $crit['ordering'] ?></td>
                                                     <td>
                                                         <div class="actions">
-                                                            <button class="btn-icon" onclick='openEditCriteriaModal(<?= json_encode($crit) ?>)' title="Edit Criteria">
+                                                            <button class="btn-icon" onclick='openEditCriteriaModal(<?= json_encode($crit, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)' title="Edit Criteria">
                                                                 <i class="fas fa-edit"></i>
                                                             </button>
                                                             <form action="../api/criteria.php" method="POST" onsubmit="return confirm('Remove criteria?');" style="display:inline;">

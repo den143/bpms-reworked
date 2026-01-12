@@ -29,7 +29,8 @@ function checkRoundLock($conn, $round_id) {
 
 // Logic: Ensure Total Segment Weights do not exceed 100%.
 function validateSegmentWeight($conn, $round_id, $new_weight, $exclude_segment_id = null) {
-    $sql = "SELECT SUM(weight_percentage) as total FROM segments WHERE round_id = ?";
+    // UPDATED: Column 'weight_percent' and check 'is_deleted = 0'
+    $sql = "SELECT SUM(weight_percent) as total FROM segments WHERE round_id = ? AND is_deleted = 0";
     if ($exclude_segment_id) $sql .= " AND id != $exclude_segment_id";
     
     $stmt = $conn->prepare($sql);
@@ -46,7 +47,7 @@ function validateSegmentWeight($conn, $round_id, $new_weight, $exclude_segment_i
 
 // Logic: Ensure Total Criteria Scores do not exceed 100 points.
 function validateCriteriaScore($conn, $segment_id, $new_score, $exclude_crit_id = null) {
-    $sql = "SELECT SUM(max_score) as total FROM criteria WHERE segment_id = ?";
+    $sql = "SELECT SUM(max_score) as total FROM criteria WHERE segment_id = ? AND is_deleted = 0";
     if ($exclude_crit_id) $sql .= " AND id != $exclude_crit_id";
     
     $stmt = $conn->prepare($sql);
@@ -64,10 +65,10 @@ function validateCriteriaScore($conn, $segment_id, $new_score, $exclude_crit_id 
 // Logic: Ensure ordering numbers (1, 2, 3...) are unique for display purposes.
 function validateUniqueOrder($conn, $type, $parent_id, $order, $exclude_id = null) {
     if ($type === 'segment') {
-        $sql = "SELECT title FROM segments WHERE round_id = ? AND ordering = ?";
+        $sql = "SELECT title FROM segments WHERE round_id = ? AND ordering = ? AND is_deleted = 0";
         if ($exclude_id) $sql .= " AND id != $exclude_id";
     } else {
-        $sql = "SELECT title FROM criteria WHERE segment_id = ? AND ordering = ?";
+        $sql = "SELECT title FROM criteria WHERE segment_id = ? AND ordering = ? AND is_deleted = 0";
         if ($exclude_id) $sql .= " AND id != $exclude_id";
     }
 
@@ -104,7 +105,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     if ($checkO !== true) { header("Location: ../public/criteria.php?round_id=$round_id&error=" . urlencode($checkO)); exit(); }
 
     // Insert Segment
-    $stmt = $conn->prepare("INSERT INTO segments (round_id, title, description, weight_percentage, ordering) VALUES (?, ?, ?, ?, ?)");
+    $stmt = $conn->prepare("INSERT INTO segments (round_id, title, description, weight_percent, ordering) VALUES (?, ?, ?, ?, ?)");
     if (!$stmt) die("Database Error: " . $conn->error);
     $stmt->bind_param("issdi", $round_id, $title, $desc, $weight, $order);
 
@@ -134,7 +135,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $checkO = validateUniqueOrder($conn, 'segment', $round_id, $order, $seg_id);
     if ($checkO !== true) { header("Location: ../public/criteria.php?round_id=$round_id&error=" . urlencode($checkO)); exit(); }
 
-    $stmt = $conn->prepare("UPDATE segments SET title=?, description=?, weight_percentage=?, ordering=? WHERE id=?");
+    // UPDATED: Column 'weight_percent'
+    $stmt = $conn->prepare("UPDATE segments SET title=?, description=?, weight_percent=?, ordering=? WHERE id=?");
     $stmt->bind_param("ssdii", $title, $desc, $weight, $order, $seg_id);
 
     if ($stmt->execute()) {
@@ -145,14 +147,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     exit();
 }
 
-// DELETE SEGMENT
+// DELETE SEGMENT (Soft Delete)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_segment') {
     $id = (int)$_POST['segment_id'];
     $r_id = (int)$_POST['round_id'];
+    // We do NOT check round lock here in PHP because the DB Trigger 'guard_segment_deletion' will do it.
+    // However, keeping it for double safety is fine.
     checkRoundLock($conn, $r_id);
 
     // Safety: Check if scores exist before deleting
-    $check = $conn->prepare("SELECT s.id FROM scores s JOIN criteria c ON s.criteria_id = c.id WHERE c.segment_id = ? LIMIT 1");
+    $check = $conn->prepare("SELECT id FROM scores s JOIN criteria c ON s.criteria_id = c.id WHERE c.segment_id = ? LIMIT 1");
     $check->bind_param("i", $id);
     $check->execute();
 
@@ -161,8 +165,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         exit();
     }
 
-    $conn->query("DELETE FROM segments WHERE id = $id");
-    header("Location: ../public/criteria.php?round_id=$r_id&success=Segment deleted");
+    // UPDATED: Soft Delete to trigger the DB protection
+    $conn->query("UPDATE segments SET is_deleted = 1 WHERE id = $id");
+    
+    // Check if the trigger blocked it (if the query failed or returned error, though PHP mysqli might not catch signal exceptions easily without try-catch)
+    if ($conn->errno) {
+         header("Location: ../public/criteria.php?round_id=$r_id&error=Delete Denied: " . $conn->error);
+    } else {
+         header("Location: ../public/criteria.php?round_id=$r_id&success=Segment deleted");
+    }
     exit();
 }
 
@@ -231,7 +242,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     exit();
 }
 
-// DELETE CRITERIA
+// DELETE CRITERIA (Soft Delete)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_criteria') {
     $id = (int)$_POST['criteria_id'];
     $r_id = (int)$_POST['round_id'];
@@ -246,8 +257,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         exit();
     }
     
-    $conn->query("DELETE FROM criteria WHERE id = $id");
-    header("Location: ../public/criteria.php?round_id=$r_id&success=Criteria deleted");
+    // UPDATED: Soft Delete to trigger the DB protection
+    $conn->query("UPDATE criteria SET is_deleted = 1 WHERE id = $id");
+
+    if ($conn->errno) {
+         header("Location: ../public/criteria.php?round_id=$r_id&error=Delete Denied: " . $conn->error);
+    } else {
+         header("Location: ../public/criteria.php?round_id=$r_id&success=Criteria deleted");
+    }
     exit();
 }
 ?>

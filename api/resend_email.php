@@ -4,7 +4,9 @@
 
 require_once __DIR__ . '/../app/core/guard.php';
 requireLogin();
-requireRole(['Event Manager', 'Contestant Manager']);
+// Security: Only Admins can trigger this to prevent abuse
+requireRole(['Event Manager', 'Contestant Manager']); 
+
 require_once __DIR__ . '/../app/config/database.php';
 require_once __DIR__ . '/../app/core/CustomMailer.php';
 
@@ -14,6 +16,7 @@ if (isset($_POST['user_id'])) {
     $action_type = $_POST['action_type'] ?? 'reset'; // Default to 'reset'
     
     // 1. Fetch User Data
+    // Matches 'users' table in beauty_pageant_db.sql
     $query = $conn->query("SELECT name, email, role FROM users WHERE id = $user_id");
     $user = $query->fetch_assoc();
     
@@ -23,14 +26,15 @@ if (isset($_POST['user_id'])) {
         exit();
     }
 
-    // Configuration: Update this link for production
-    $site_link = "https://juvenal-esteban-octavalent.ngrok-free.dev/bpms/public/index.php"; 
+    // --- CONFIGURATION: UPDATE FOR DEPLOYMENT ---
+    // If running on XAMPP/Localhost:
+    $site_link = "https://juvenal-esteban-octavalent.ngrok-free.dev/bpms_v2/public/index.php";
+        
     $msg = "";
     $status = "error";
 
     // OPTION A: REMINDER (Safe Mode)
     // Logic: Send a login link but DO NOT change the password.
-    // We cannot email the current password because it is hashed (encrypted) in the DB.
     if ($action_type === 'reminder') {
         $subject = "Reminder: Your Access Credentials";
         $body = "
@@ -61,15 +65,17 @@ if (isset($_POST['user_id'])) {
         
         // 1. Generate Random Password (8 characters)
         $new_pass = substr(str_shuffle("abcdefDEFGH23456789"), 0, 8);
+        
+        // 2. Hash the password for security
         $hashed_pass = password_hash($new_pass, PASSWORD_DEFAULT);
 
-        // 2. Update Database with Hash
+        // 3. Update Database with Hash
         $stmt = $conn->prepare("UPDATE users SET password = ? WHERE id = ?");
         $stmt->bind_param("si", $hashed_pass, $user_id);
         
         if ($stmt->execute()) {
             
-            // 3. Send Email with Plain Text Password
+            // 4. Send Email with Plain Text Password
             $subject = "Security Alert: New Login Credentials";
             $body = "
                 <h2>Hello, {$user['name']}!</h2>

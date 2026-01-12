@@ -7,12 +7,18 @@ requireRole('Judge');
 
 $judge_id = $_SESSION['user_id'];
 
-// 1. Get Active Context
-$query = "SELECT r.id as round_id, r.title as round_title, e.id as event_id, e.name as event_name 
+// 1. Get Active Context (Event & Round)
+// UPDATED: 'title' instead of 'name', added 'is_deleted' checks
+$query = "SELECT r.id as round_id, r.title as round_title, e.id as event_id, e.title as event_name 
           FROM event_judges ej
           JOIN events e ON ej.event_id = e.id
           JOIN rounds r ON r.event_id = e.id
-          WHERE ej.judge_id = ? AND e.status = 'Active' AND r.status = 'Active'
+          WHERE ej.judge_id = ? 
+            AND e.status = 'Active' 
+            AND r.status = 'Active'
+            AND ej.status = 'Active'
+            AND ej.is_deleted = 0
+            AND r.is_deleted = 0
           LIMIT 1";
 
 $stmt = $conn->prepare($query);
@@ -26,14 +32,18 @@ $round_id = $active['round_id'];
 $event_id = $active['event_id'];
 
 // 2. Fetch Segments
-$seg_q = "SELECT id, title, description FROM segments WHERE round_id = ? ORDER BY ordering";
+$seg_q = "SELECT id, title, description FROM segments WHERE round_id = ? AND is_deleted = 0 ORDER BY ordering";
 $stmt_s = $conn->prepare($seg_q);
 $stmt_s->bind_param("i", $round_id);
 $stmt_s->execute();
 $segments_raw = $stmt_s->get_result()->fetch_all(MYSQLI_ASSOC);
 
 // 3. Fetch Criteria
-$crit_q = "SELECT id, segment_id, title, description, max_score FROM criteria WHERE segment_id IN (SELECT id FROM segments WHERE round_id = ?)";
+$crit_q = "SELECT id, segment_id, title, description, max_score 
+           FROM criteria 
+           WHERE segment_id IN (SELECT id FROM segments WHERE round_id = ?) 
+           AND is_deleted = 0
+           ORDER BY ordering";
 $stmt_crit = $conn->prepare($crit_q);
 $stmt_crit->bind_param("i", $round_id);
 $stmt_crit->execute();
@@ -45,40 +55,54 @@ foreach ($segments_raw as $s) {
     $segments_data[$s['id']] = $s;
 }
 
-// 4. Fetch Contestants with Dynamic Sequential Numbering
-$cont_q = "SELECT u.id, u.name, cd.photo, cd.age, cd.hometown 
-           FROM contestant_details cd 
-           JOIN users u ON cd.user_id = u.id 
-           WHERE cd.event_id = ? 
+// 4. Fetch Contestants
+// UPDATED: Table 'event_contestants' (aliased as ec)
+$cont_q = "SELECT u.id, u.name, ec.photo, ec.age, ec.hometown, ec.contestant_number
+           FROM event_contestants ec 
+           JOIN users u ON ec.user_id = u.id 
+           WHERE ec.event_id = ? 
             AND u.status = 'Active' 
-            AND cd.status != 'Eliminated'
-           ORDER BY cd.contestant_number ASC"; // Sorting by ID to keep order consistent
+            AND ec.status IN ('Active', 'Qualified')
+            AND ec.is_deleted = 0
+           ORDER BY ec.contestant_number ASC"; 
+
 $stmt_c = $conn->prepare($cont_q);
 $stmt_c->bind_param("i", $event_id);
 $stmt_c->execute();
 $contestants_res = $stmt_c->get_result()->fetch_all(MYSQLI_ASSOC);
 
 $contestants = [];
-$counter = 1;
 foreach ($contestants_res as $c) {
-    $c['display_number'] = $counter++; // Dynamic #1, #2, #3...
+    // Use actual contestant number from DB
+    $c['display_number'] = $c['contestant_number']; 
     $contestants[] = $c;
 }
 
 // 5. Fetch Existing Drafts
+// Note: Assuming 'scores' table uses 'score_value' column based on previous code
 $scores_res = $conn->query("SELECT contestant_id, criteria_id, score_value FROM scores WHERE judge_id = $judge_id AND round_id = $round_id");
 $draft_scores = [];
-while($r = $scores_res->fetch_assoc()) {
-    $draft_scores[$r['contestant_id']][$r['criteria_id']] = $r['score_value'];
+if($scores_res) {
+    while($r = $scores_res->fetch_assoc()) {
+        $draft_scores[$r['contestant_id']][$r['criteria_id']] = $r['score_value'];
+    }
 }
 
-$comm_res = $conn->query("SELECT contestant_id, segment_id, comment_text FROM segment_comments WHERE judge_id = $judge_id AND round_id = $round_id");
+// Check for Comments Table existence before querying
 $draft_comments = [];
-while($r = $comm_res->fetch_assoc()) {
-    $draft_comments[$r['contestant_id']][$r['segment_id']] = $r['comment_text'];
+$check_tbl = $conn->query("SHOW TABLES LIKE 'segment_comments'");
+if($check_tbl && $check_tbl->num_rows > 0) {
+    $comm_res = $conn->query("SELECT contestant_id, segment_id, comment_text FROM segment_comments WHERE judge_id = $judge_id AND round_id = $round_id");
+    if($comm_res) {
+        while($r = $comm_res->fetch_assoc()) {
+            $draft_comments[$r['contestant_id']][$r['segment_id']] = $r['comment_text'];
+        }
+    }
 }
 
-$is_locked = ($conn->query("SELECT status FROM judge_round_status WHERE round_id = $round_id AND judge_id = $judge_id")->fetch_assoc()['status'] ?? '') === 'Submitted';
+// Check Lock Status
+$status_res = $conn->query("SELECT status FROM judge_round_status WHERE round_id = $round_id AND judge_id = $judge_id");
+$is_locked = ($status_res && $row = $status_res->fetch_assoc()) ? ($row['status'] === 'Submitted') : false;
 ?>
 
 <!DOCTYPE html>
@@ -91,62 +115,52 @@ $is_locked = ($conn->query("SELECT status FROM judge_round_status WHERE round_id
     <style>
         :root { --gold: #F59E0B; --dark: #111827; --success: #059669; }
         body { background: #f3f4f6; font-family: 'Segoe UI', sans-serif; margin: 0; padding-bottom: 90px; }
-        .header { background: var(--dark); color: white; padding: 15px; position: sticky; top: 0; z-index: 1000; text-align: center; }
         
-        .tabs { display: flex; overflow-x: auto; background: white; padding: 10px; gap: 10px; border-bottom: 1px solid #ddd; position: sticky; top: 65px; z-index: 999; }
+        .header { 
+            background: var(--dark); color: white; padding: 15px; 
+            position: sticky; top: 0; z-index: 1000; 
+            display: flex; justify-content: space-between; align-items: center; 
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        }
+        
+        .tabs { display: flex; overflow-x: auto; background: white; padding: 10px; gap: 10px; border-bottom: 1px solid #ddd; position: sticky; top: 60px; z-index: 999; }
         .tab { padding: 8px 18px; background: #eee; border-radius: 20px; font-weight: bold; cursor: pointer; white-space: nowrap; font-size: 0.85rem; border: none; transition: 0.2s; }
         .tab.active { background: var(--gold); color: white; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
 
         .contestant-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; padding: 15px; }
-        .c-card { background: white; border-radius: 10px; padding: 12px; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.05); cursor: pointer; border: 2px solid transparent; transition: 0.2s; }
-        .c-card img { width: 75px; height: 75px; border-radius: 50%; object-fit: cover; margin-bottom: 8px; border: 2px solid #f3f4f6; }
+        .c-card { background: white; border-radius: 10px; padding: 12px; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.05); cursor: pointer; border: 2px solid transparent; transition: 0.2s; position: relative; }
+        .c-card img { width: 80px; height: 80px; border-radius: 50%; object-fit: cover; margin-bottom: 8px; border: 3px solid #f3f4f6; }
         .c-card.active { border-color: var(--gold); background: #fffbeb; }
         .c-card.scored { border-color: var(--success); }
-        .c-info-name { font-weight: bold; font-size: 0.9rem; display: block; color: var(--dark); }
-        .c-info-sub { font-size: 0.75rem; color: #6b7280; display: block; margin-top: 2px; }
+        .c-card.scored::after { content: '\f00c'; font-family: "Font Awesome 6 Free"; font-weight: 900; position: absolute; top: 5px; right: 5px; background: var(--success); color: white; width: 20px; height: 20px; border-radius: 50%; font-size: 10px; display: flex; align-items: center; justify-content: center; }
+        
+        .c-info-name { font-weight: bold; font-size: 0.95rem; display: block; color: var(--dark); line-height: 1.2; }
+        .c-info-sub { font-size: 0.75rem; color: #6b7280; display: block; margin-top: 4px; }
 
-        .scoring-overlay { background: white; position: fixed; top: 125px; bottom: 80px; left: 0; right: 0; z-index: 900; padding: 20px; overflow-y: auto; display: none; }
+        .scoring-overlay { background: white; position: fixed; top: 120px; bottom: 80px; left: 0; right: 0; z-index: 900; padding: 20px; overflow-y: auto; display: none; }
         .crit-item { background: #f9fafb; padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #e5e7eb; }
-        .crit-title { font-weight: bold; font-size: 1rem; color: var(--dark); }
+        .crit-title { font-weight: bold; font-size: 1rem; color: var(--dark); display: flex; justify-content: space-between; }
         .crit-desc { font-size: 0.8rem; color: #6b7280; margin: 4px 0 10px 0; line-height: 1.4; }
-        .score-input { width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 8px; font-size: 1.4rem; text-align: center; font-weight: bold; color: var(--dark); }
+        .score-input { width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 8px; font-size: 1.4rem; text-align: center; font-weight: bold; color: var(--dark); box-sizing: border-box; }
         .score-input:focus { border-color: var(--gold); outline: none; background: #fffbeb; }
         
-        .footer { position: fixed; bottom: 0; width: 100%; background: white; padding: 15px; box-shadow: 0 -2px 10px rgba(0,0,0,0.1); text-align: center; display: flex; gap: 12px; justify-content: center; z-index: 1001; }
-        .btn { padding: 12px 24px; border-radius: 8px; font-weight: bold; border: none; cursor: pointer; transition: 0.2s; }
+        .footer { position: fixed; bottom: 0; width: 100%; background: white; padding: 15px; box-shadow: 0 -2px 10px rgba(0,0,0,0.1); text-align: center; display: flex; gap: 12px; justify-content: center; z-index: 1001; box-sizing: border-box; }
+        .btn { padding: 12px 24px; border-radius: 8px; font-weight: bold; border: none; cursor: pointer; transition: 0.2s; font-size: 1rem; }
         .btn-success { background: var(--success); color: white; width: 100%; max-width: 320px; }
         .btn-back { background: #4b5563; color: white; }
         .hidden { display: none !important; }
 
-        .header { 
-            background: var(--dark); 
-            color: white; 
-            padding: 15px; 
-            position: sticky; 
-            top: 0; 
-            z-index: 1000; 
-            display: flex; 
-            justify-content: space-between; 
-            align-items: center; 
-        }
-
-        .logout-btn {
-            color: white;
-            text-decoration: none;
-            font-size: 0.85rem;
-            background: #dc2626; /* Red color for logout */
-            padding: 6px 12px;
-            border-radius: 6px;
-            font-weight: bold;
-            transition: 0.2s;
-        }
-
-        .logout-btn:hover {
-            background: #b91c1c;
-        }
+        .logout-btn { color: white; text-decoration: none; font-size: 0.75rem; background: #dc2626; padding: 6px 12px; border-radius: 6px; font-weight: bold; display: flex; align-items: center; gap: 5px; }
+        .logout-btn:hover { background: #b91c1c; }
 
         .crit-input.invalid { border-color: #dc2626 !important; background-color: #fef2f2 !important; }
         .error-hint { color: #dc2626; font-size: 0.75rem; margin-top: 4px; font-weight: bold; display: none; }
+        
+        /* Save Indicator */
+        #saveStatus { font-size: 0.75rem; font-weight: bold; color: #9ca3af; transition: color 0.3s; }
+        #saveStatus.saving { color: var(--gold); }
+        #saveStatus.saved { color: var(--success); }
+        #saveStatus.error { color: #dc2626; }
     </style>
 </head>
 <body>
@@ -161,14 +175,12 @@ $is_locked = ($conn->query("SELECT status FROM judge_round_status WHERE round_id
         </div>
     </div>
 
-    <div id="saveStatus" style="font-size: 0.8rem; color: #9ca3af; margin-right: 15px; font-weight: bold;">
-        All changes saved
+    <div style="display: flex; align-items: center; gap: 15px;">
+        <div id="saveStatus">All changes saved</div>
+        <a href="logout.php" class="logout-btn" onclick="return confirm('Exit the judging panel?')">
+            <i class="fas fa-sign-out-alt"></i> EXIT
+        </a>
     </div>
-
-    <a href="logout.php" class="logout-btn" onclick="return confirm('Exit the judging panel? Your progress is saved.')">
-        <span>LOGOUT</span>
-        <i class="fas fa-sign-out-alt"></i>
-    </a>
 </div>
 
 <div class="tabs" id="segmentTabs">
@@ -180,9 +192,9 @@ $is_locked = ($conn->query("SELECT status FROM judge_round_status WHERE round_id
 <div class="contestant-grid" id="contestantGrid">
     <?php foreach ($contestants as $c): ?>
         <div class="c-card" id="card-<?= $c['id'] ?>" onclick="openScoring(<?= $c['id'] ?>)">
-            <img src="assets/uploads/contestants/<?= $c['photo'] ?>" onerror="this.src='assets/images/default_contestant.png'">
+            <img src="assets/uploads/contestants/<?= $c['photo'] ?>" onerror="this.src='assets/images/default_user.png'">
             <span class="c-info-name">#<?= $c['display_number'] ?> <?= htmlspecialchars($c['name']) ?></span>
-            <span class="c-info-sub"><?= $c['age'] ?>y/o | <?= htmlspecialchars($c['hometown']) ?></span>
+            <span class="c-info-sub"><?= htmlspecialchars($c['hometown']) ?></span>
         </div>
     <?php endforeach; ?>
 </div>
@@ -198,7 +210,7 @@ $is_locked = ($conn->query("SELECT status FROM judge_round_status WHERE round_id
 
     <div style="margin-top: 25px; padding-bottom: 20px;">
         <label style="font-weight: bold; display: block; margin-bottom: 8px; color: var(--dark);">Notes / Comments:</label>
-        <textarea id="segmentComment" class="score-input" style="text-align: left; font-size: 1rem; height: 90px; font-weight: normal;" placeholder="Optional notes for this contestant..." onchange="saveDraft()"></textarea>
+        <textarea id="segmentComment" class="score-input" style="text-align: left; font-size: 1rem; height: 90px; font-weight: normal;" placeholder="Optional notes..." onchange="saveDraft()"></textarea>
     </div>
 </div>
 
@@ -207,14 +219,18 @@ $is_locked = ($conn->query("SELECT status FROM judge_round_status WHERE round_id
     <?php if (!$is_locked): ?>
         <button class="btn btn-success" id="submitBtn" onclick="validateAndSubmit()">SUBMIT FINAL SCORES <i class="fas fa-paper-plane" style="margin-left:8px;"></i></button>
     <?php else: ?>
-        <button class="btn" style="background:#d1d5db; color:#6b7280; cursor:not-allowed;" disabled>ROUND SUBMITTED</button>
+        <button class="btn" style="background:#d1d5db; color:#6b7280; cursor:not-allowed;" disabled>ROUND SUBMITTED <i class="fas fa-lock"></i></button>
     <?php endif; ?>
 </div>
 
 <script>
 const segments = <?= json_encode($segments_data) ?>;
 const contestants = <?= json_encode($contestants) ?>;
-const drafts = { scores: <?= json_encode($draft_scores) ?>, comments: <?= json_encode($draft_comments) ?> };
+// Use empty objects if null to prevent JS errors
+const drafts = { 
+    scores: <?= json_encode($draft_scores) ?> || {}, 
+    comments: <?= json_encode($draft_comments) ?> || {} 
+};
 const roundId = <?= $round_id ?>;
 let currentSegId = Object.keys(segments)[0];
 let activeCId = null;
@@ -224,7 +240,6 @@ function setSegment(id) {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.getElementById('tab-' + id).classList.add('active');
     
-    // FIX: If scoring is open, refresh it for the new segment
     if(activeCId) {
         openScoring(activeCId); 
     } else {
@@ -250,15 +265,18 @@ function openScoring(cid) {
             const val = (drafts.scores[cid] && drafts.scores[cid][crit.id]) ? drafts.scores[cid][crit.id] : '';
             html += `
                 <div class="crit-item">
-                    <div class="crit-title">${crit.title}</div>
+                    <div class="crit-title">
+                        ${crit.title}
+                        <span style="font-size:0.8rem; color:#6b7280; font-weight:normal;">Max: ${crit.max_score}</span>
+                    </div>
                     <div class="crit-desc">${crit.description || ''}</div>
                     <input type="number" step="0.01" class="score-input crit-input" 
                            data-crit="${crit.id}" min="0" max="${crit.max_score}" 
-                           value="${val}" placeholder="Score (Max: ${crit.max_score})" 
+                           value="${val}" 
                            onkeyup="validateInput(this)" 
                            onchange="saveDraft()" 
                            <?= $is_locked ? 'readonly' : '' ?>>
-                    <div class="error-hint">Exceeds max score of ${crit.max_score}!</div>
+                    <div class="error-hint">Value cannot exceed ${crit.max_score}</div>
                 </div>`;
         });
     } else {
@@ -277,19 +295,14 @@ function openScoring(cid) {
 
 function validateInput(el) {
     const max = parseFloat(el.getAttribute('max'));
-    const val = parseFloat(el.value);
+    let val = parseFloat(el.value);
     const hint = el.nextElementSibling;
 
     if (val > max) {
         el.classList.add('invalid');
         hint.style.display = 'block';
-        el.value = max; // Force the max value
-        
-        // Auto-clear warning after 2 seconds
-        setTimeout(() => {
-            el.classList.remove('invalid');
-            hint.style.display = 'none';
-        }, 2000);
+        // Optional: Reset to max immediately
+        // el.value = max; 
     } else {
         el.classList.remove('invalid');
         hint.style.display = 'none';
@@ -310,90 +323,95 @@ function updateCardStatus() {
     contestants.forEach(c => {
         const card = document.getElementById('card-' + c.id);
         const seg = segments[currentSegId];
+        // Check if all criteria in this segment have a score
         const isComplete = seg.criteria && seg.criteria.length > 0 && 
-                           seg.criteria.every(crit => drafts.scores[c.id] && drafts.scores[c.id][crit.id]);
+                           seg.criteria.every(crit => {
+                               return drafts.scores[c.id] && 
+                                      drafts.scores[c.id][crit.id] !== undefined && 
+                                      drafts.scores[c.id][crit.id] !== "";
+                           });
         
         if(isComplete) card.classList.add('scored');
         else card.classList.remove('scored');
     });
 }
 
-async function saveDraft() {
+let saveTimeout;
+function saveDraft() {
     if(!activeCId || <?= $is_locked ? 'true' : 'false' ?>) return;
     
-    // Gather scores and comments
-    const scores = {};
-    document.querySelectorAll('.crit-input').forEach(i => {
-        // Ensure we don't save empty strings as 0
-        if(i.value !== '') {
-            let val = parseFloat(i.value);
-            let max = parseFloat(i.getAttribute('max'));
-            // Safety cap before sending to API
-            scores[i.dataset.crit] = val > max ? max : val;
-        }
-    });
-    
-    const comment = document.getElementById('segmentComment').value;
-    
-    if(!drafts.scores[activeCId]) drafts.scores[activeCId] = {};
-    Object.assign(drafts.scores[activeCId], scores);
-    
-    if(!drafts.comments[activeCId]) drafts.comments[activeCId] = {};
-    drafts.comments[activeCId][currentSegId] = comment;
-
     const statusEl = document.getElementById('saveStatus');
-    // 2. SHOW "SAVING"
     statusEl.innerText = "Saving...";
-    statusEl.style.color = "#F59E0B";
+    statusEl.className = "saving";
 
-    try {
-        await fetch('../api/save_draft.php', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                round_id: roundId,
-                contestant_id: activeCId,
-                segment_id: currentSegId,
-                scores: scores,
-                comment: comment
-            })
+    clearTimeout(saveTimeout);
+    saveTimeout = setTimeout(async () => {
+        // Gather scores
+        const scores = {};
+        document.querySelectorAll('.crit-input').forEach(i => {
+            if(i.value !== '') {
+                let val = parseFloat(i.value);
+                let max = parseFloat(i.getAttribute('max'));
+                if(val > max) val = max; // Enforce cap on save
+                scores[i.dataset.crit] = val;
+            }
         });
+        
+        const comment = document.getElementById('segmentComment').value;
+        
+        // Update Local State
+        if(!drafts.scores[activeCId]) drafts.scores[activeCId] = {};
+        Object.assign(drafts.scores[activeCId], scores);
+        
+        if(!drafts.comments[activeCId]) drafts.comments[activeCId] = {};
+        drafts.comments[activeCId][currentSegId] = comment;
 
-        statusEl.innerText = "Saved";
-        statusEl.style.color = "#fff";
-    } catch(e) { 
-        // 4. SHOW ERROR
-        statusEl.innerText = "Connection Error!";
-        statusEl.style.color = "#dc2626"; // Red
-    }
+        try {
+            await fetch('../api/save_draft.php', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    round_id: roundId,
+                    contestant_id: activeCId,
+                    segment_id: currentSegId,
+                    scores: scores,
+                    comment: comment
+                })
+            });
+
+            statusEl.innerText = "All changes saved";
+            statusEl.className = "saved";
+        } catch(e) { 
+            statusEl.innerText = "Save Error!";
+            statusEl.className = "error";
+        }
+    }, 1000); // 1 second debounce
 }
 
 function validateAndSubmit() {
     let missingCount = 0;
     
-    // 1. Client-Side Validation (UX only)
+    // Check all contestants across all segments
     Object.values(segments).forEach(s => {
-        contestants.forEach(c => {
-            if (s.criteria) {
-                s.criteria.forEach(crit => {
-                    // Check if score exists in our local draft object
+        if (s.criteria) {
+            s.criteria.forEach(crit => {
+                contestants.forEach(c => {
                     if (!drafts.scores[c.id] || 
                         drafts.scores[c.id][crit.id] === undefined || 
                         drafts.scores[c.id][crit.id] === "") {
                         missingCount++;
                     }
                 });
-            }
-        });
+            });
+        }
     });
 
     if (missingCount > 0) {
-        alert(`Incomplete Scorecard: There are ${missingCount} criteria still missing scores.`);
+        alert(`Incomplete: You are missing scores for ${missingCount} criteria items.`);
         return;
     }
 
-    if (confirm("FINAL SUBMISSION: This will lock your scores. Are you sure?")) {
-        // 2. Create a hidden form dynamically to send a POST request
+    if (confirm("FINAL SUBMISSION:\nThis will lock your scores and you cannot edit them later.\n\nProceed?")) {
         const form = document.createElement('form');
         form.method = 'POST';
         form.action = '../api/submit_scores.php';
@@ -405,13 +423,11 @@ function validateAndSubmit() {
 
         form.appendChild(inputRound);
         document.body.appendChild(form);
-        
-        // 3. Submit
         form.submit();
     }
 }
 
-// Start on first segment
+// Init
 setSegment(currentSegId);
 </script>
 

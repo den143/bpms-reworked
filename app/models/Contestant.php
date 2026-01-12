@@ -11,15 +11,17 @@ class Contestant
     public static function getAllByManager(int $managerId, string $status, string $search = ''): array
     {
         $db = self::db();
-        // UPDATED: Added cd.status AS competition_status
+        
         $sql = "SELECT u.id, u.name, u.email, u.status, 
-                       cd.status AS competition_status, 
-                       cd.age, cd.height, cd.vital_stats, cd.hometown, cd.motto, cd.photo, cd.event_id,
-                       e.name as event_name 
+                       ec.status AS competition_status, 
+                       ec.age, ec.height, 
+                       CONCAT(ec.bust, '-', ec.waist, '-', ec.hips) as vital_stats, 
+                       ec.hometown, ec.motto, ec.photo, ec.event_id,
+                       e.title as event_name 
                 FROM users u 
-                JOIN contestant_details cd ON u.id = cd.user_id 
-                JOIN events e ON cd.event_id = e.id 
-                WHERE e.user_id = ? 
+                JOIN event_contestants ec ON u.id = ec.user_id 
+                JOIN events e ON ec.event_id = e.id 
+                WHERE e.manager_id = ? 
                   AND e.status = 'Active' 
                   AND u.role = 'Contestant' 
                   AND u.status = ?";
@@ -28,17 +30,20 @@ class Contestant
 
     public static function getAllByOrganizer(int $organizerId, string $status, string $search = ''): array
     {
-        // UPDATED: Added cd.status AS competition_status
+        
         $sql = "SELECT u.id, u.name, u.email, u.status, 
-                       cd.status AS competition_status,
-                       cd.age, cd.height, cd.vital_stats, cd.hometown, cd.motto, cd.photo, cd.event_id,
-                       e.name as event_name 
+                       ec.status AS competition_status,
+                       ec.age, ec.height, 
+                       CONCAT(ec.bust, '-', ec.waist, '-', ec.hips) as vital_stats,
+                       ec.hometown, ec.motto, ec.photo, ec.event_id,
+                       e.title as event_name 
                 FROM users u 
-                JOIN contestant_details cd ON u.id = cd.user_id 
-                JOIN events e ON cd.event_id = e.id 
-                JOIN event_organizers eo ON e.id = eo.event_id
-                WHERE eo.user_id = ? 
-                  AND eo.status = 'Active'
+                JOIN event_contestants ec ON u.id = ec.user_id 
+                JOIN events e ON ec.event_id = e.id 
+                JOIN event_teams et ON e.id = et.event_id
+                WHERE et.user_id = ? 
+                  AND et.status = 'Active'
+                  AND et.is_deleted = 0
                   AND e.status = 'Active' 
                   AND u.role = 'Contestant' 
                   AND u.status = ?";
@@ -47,10 +52,11 @@ class Contestant
 
     private static function fetchData($sql, $baseParams, $baseTypes, $search) {
         $db = self::db();
-        $sql .= " AND cd.is_deleted = 0 "; 
+        
+        $sql .= " AND ec.is_deleted = 0 "; 
 
         if (!empty($search)) {
-            $sql .= " AND (u.name LIKE ? OR cd.hometown LIKE ?)";
+            $sql .= " AND (u.name LIKE ? OR ec.hometown LIKE ?)";
             $baseTypes .= "ss";
             $searchTerm = "%$search%";
             $baseParams[] = $searchTerm;

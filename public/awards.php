@@ -7,7 +7,8 @@ require_once __DIR__ . '/../app/config/database.php';
 $manager_id = $_SESSION['user_id'];
 
 // 1. Get Active Event
-$evt_stmt = $conn->prepare("SELECT id, name FROM events WHERE user_id = ? AND status = 'Active' LIMIT 1");
+// UPDATED: 'title' instead of 'name'
+$evt_stmt = $conn->prepare("SELECT id, title FROM events WHERE manager_id = ? AND status = 'Active' LIMIT 1");
 $evt_stmt->bind_param("i", $manager_id);
 $evt_stmt->execute();
 $active_event = $evt_stmt->get_result()->fetch_assoc();
@@ -22,11 +23,12 @@ if ($active_event) {
     $event_id = $active_event['id'];
 
     // Fetch Awards (Active)
-    $sql = "SELECT * FROM awards WHERE event_id = $event_id AND is_deleted = 0 ORDER BY type ASC, title ASC";
+    // UPDATED: 'category_type' instead of 'type'
+    $sql = "SELECT * FROM awards WHERE event_id = $event_id AND is_deleted = 0 ORDER BY category_type ASC, title ASC";
     $awards = $conn->query($sql)->fetch_all(MYSQLI_ASSOC);
 
     // Fetch Awards (Archived)
-    $sql_arc = "SELECT * FROM awards WHERE event_id = $event_id AND is_deleted = 1 ORDER BY type ASC";
+    $sql_arc = "SELECT * FROM awards WHERE event_id = $event_id AND is_deleted = 1 ORDER BY category_type ASC";
     $archived = $conn->query($sql_arc)->fetch_all(MYSQLI_ASSOC);
 
     // Fetch Segments (For Dropdown)
@@ -49,7 +51,25 @@ if ($active_event) {
     <style>
         .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
         .btn-add { background-color: #F59E0B; color: white; padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
-        .btn-icon { background: white; border: 1px solid #d1d5db; width: 32px; height: 32px; border-radius: 4px; cursor: pointer; color: #4b5563; display: flex; justify-content: center; align-items: center; text-decoration: none; }
+        
+        /* UPDATED BUTTON STYLE: Supports Text + Icon */
+        .btn-icon { 
+            background: white; 
+            border: 1px solid #d1d5db; 
+            border-radius: 6px; 
+            cursor: pointer; 
+            color: #4b5563; 
+            display: inline-flex; 
+            justify-content: center; 
+            align-items: center; 
+            text-decoration: none;
+            padding: 6px 12px;
+            width: auto;
+            gap: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
         .btn-icon:hover { background: #f3f4f6; color: #111827; }
 
         .view-tabs { display: flex; gap: 10px; margin-bottom: 20px; }
@@ -62,8 +82,7 @@ if ($active_event) {
         .badge { padding: 2px 8px; border-radius: 4px; font-size: 11px; text-transform: uppercase; font-weight: bold; }
         .badge-major { background: #fef3c7; color: #b45309; }
         .badge-minor { background: #e0f2fe; color: #0369a1; }
-        .badge-special { background: #f3f4f6; color: #4b5563; }
-
+        
         .smart-tag { font-size: 12px; color: #059669; display: flex; align-items: center; gap: 5px; margin-top: 5px; }
         .manual-tag { font-size: 12px; color: #6b7280; display: flex; align-items: center; gap: 5px; margin-top: 5px; }
         .audience-tag { font-size: 12px; color: #7c3aed; display: flex; align-items: center; gap: 5px; margin-top: 5px; }
@@ -112,17 +131,17 @@ if ($active_event) {
                             <div class="award-info">
                                 <h3>
                                     <?= htmlspecialchars($aw['title']) ?>
-                                    <span class="badge badge-<?= strtolower($aw['type']) ?>"><?= $aw['type'] ?></span>
+                                    <span class="badge badge-<?= strtolower($aw['category_type']) ?>"><?= $aw['category_type'] ?></span>
                                 </h3>
                                 
-                                <?php if ($aw['source_type'] === 'Manual'): ?>
+                                <?php if ($aw['selection_method'] === 'Manual'): ?>
                                     <div class="manual-tag"><i class="fas fa-hand-pointer"></i> Manual Selection</div>
-                                <?php elseif ($aw['source_type'] === 'Audience'): ?>
+                                <?php elseif ($aw['selection_method'] === 'Audience_Vote'): ?>
                                     <div class="audience-tag"><i class="fas fa-users"></i> Audience Vote (People's Choice)</div>
                                 <?php else: ?>
                                     <div class="smart-tag">
                                         <i class="fas fa-robot"></i> 
-                                        Auto-calculated from <?= $aw['source_type'] ?>
+                                        Auto-calculated from <?= str_replace('_', ' ', $aw['selection_method']) ?>
                                     </div>
                                 <?php endif; ?>
                                 
@@ -134,18 +153,23 @@ if ($active_event) {
                             <div class="actions" style="display:flex; gap:5px;">
                                 <?php if ($view === 'active'): ?>
                                     <button class="btn-icon" onclick='openEdit(<?= json_encode($aw, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)' title="Edit">
-                                        <i class="fas fa-edit"></i>
+                                        <i class="fas fa-edit"></i> Edit
                                     </button>
                                     <a href="../api/awards.php?action=archive&id=<?= $aw['id'] ?>" 
                                        class="btn-icon" style="color:#dc2626; border-color:#fee2e2;" 
                                        onclick="return confirm('Archive this award?')" title="Archive">
-                                        <i class="fas fa-archive"></i>
+                                        <i class="fas fa-archive"></i> Archive
                                     </a>
                                 <?php else: ?>
                                     <a href="../api/awards.php?action=restore&id=<?= $aw['id'] ?>" 
                                        class="btn-icon" style="color:#059669; border-color:#d1fae5;" 
                                        title="Restore">
-                                        <i class="fas fa-undo"></i>
+                                        <i class="fas fa-undo"></i> Restore
+                                    </a>
+                                    <a href="../api/awards.php?action=delete&id=<?= $aw['id'] ?>" 
+                                       class="btn-icon" style="color:#b91c1c; border-color:#fecaca;" 
+                                       onclick="return confirm('Permanently delete this award? This cannot be undone.')" title="Delete Permanently">
+                                        <i class="fas fa-trash"></i> Delete
                                     </a>
                                 <?php endif; ?>
                             </div>
@@ -173,7 +197,7 @@ if ($active_event) {
             
             <div class="form-group">
                 <label>Category Type</label>
-                <select name="type" id="a_type" class="form-control">
+                <select name="category_type" id="a_type" class="form-control">
                     <option value="Minor">Minor / Special Award</option>
                     <option value="Major">Major Title (Winner/Runner-up)</option>
                 </select>
@@ -181,16 +205,17 @@ if ($active_event) {
 
             <div class="form-group">
                 <label>Winner Selection Method</label>
-                <select name="source_type" id="a_source" class="form-control" onchange="toggleSourceDropdown()">
+                <select name="selection_method" id="a_source" class="form-control" onchange="toggleSourceDropdown()">
                     <option value="Manual">Manual Selection (Judge Vote/Deliberation)</option>
-                    <option value="Audience">Audience Vote (People's Choice)</option> <option value="Segment">Highest Score in a Specific Segment</option>
-                    <option value="Round">Highest Score in a Specific Round</option>
+                    <option value="Audience_Vote">Audience Vote (People's Choice)</option> 
+                    <option value="Highest_Segment">Highest Score in a Specific Segment</option>
+                    <option value="Highest_Round">Highest Score in a Specific Round</option>
                 </select>
             </div>
 
             <div class="form-group" id="group_segment" style="display:none; background:#f9fafb; padding:10px; border-radius:6px;">
                 <label style="font-size:12px; font-weight:bold; color:#059669;">Select Segment Source:</label>
-                <select name="segment_id" id="a_segment_id" class="form-control">
+                <select name="linked_segment_id" id="a_segment_id" class="form-control">
                     <?php foreach ($segments as $s): ?>
                         <option value="<?= $s['id'] ?>"><?= $s['round_title'] ?> - <?= $s['title'] ?></option>
                     <?php endforeach; ?>
@@ -199,7 +224,7 @@ if ($active_event) {
 
             <div class="form-group" id="group_round" style="display:none; background:#f9fafb; padding:10px; border-radius:6px;">
                 <label style="font-size:12px; font-weight:bold; color:#059669;">Select Round Source:</label>
-                <select name="round_id" id="a_round_id" class="form-control">
+                <select name="linked_round_id" id="a_round_id" class="form-control">
                     <?php foreach ($rounds as $r): ?>
                         <option value="<?= $r['id'] ?>"><?= $r['title'] ?></option>
                     <?php endforeach; ?>
@@ -236,22 +261,24 @@ if ($active_event) {
         document.getElementById('formAction').value = 'update';
         document.getElementById('award_id').value = aw.id;
         document.getElementById('a_title').value = aw.title;
-        document.getElementById('a_type').value = aw.type;
+        document.getElementById('a_type').value = aw.category_type; // DB column name
         document.getElementById('a_desc').value = aw.description;
         
-        document.getElementById('a_source').value = aw.source_type;
-        toggleSourceDropdown(); // Show correct dropdown
+        document.getElementById('a_source').value = aw.selection_method; // DB column name
+        toggleSourceDropdown(); 
 
-        if(aw.source_type === 'Segment') document.getElementById('a_segment_id').value = aw.source_id;
-        if(aw.source_type === 'Round') document.getElementById('a_round_id').value = aw.source_id;
+        // Populate FKs
+        if(aw.selection_method === 'Highest_Segment') document.getElementById('a_segment_id').value = aw.linked_segment_id;
+        if(aw.selection_method === 'Highest_Round') document.getElementById('a_round_id').value = aw.linked_round_id;
     }
 
     function closeModal(id) { document.getElementById(id).style.display = 'none'; }
 
     function toggleSourceDropdown() {
         const val = document.getElementById('a_source').value;
-        document.getElementById('group_segment').style.display = (val === 'Segment') ? 'block' : 'none';
-        document.getElementById('group_round').style.display = (val === 'Round') ? 'block' : 'none';
+        // Match DB ENUM values
+        document.getElementById('group_segment').style.display = (val === 'Highest_Segment') ? 'block' : 'none';
+        document.getElementById('group_round').style.display = (val === 'Highest_Round') ? 'block' : 'none';
     }
 
     // Toast Logic

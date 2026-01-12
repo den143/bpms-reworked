@@ -20,8 +20,8 @@ require_once __DIR__ . '/../app/config/database.php';
 function checkOverlap($conn, $event_id, $date, $start, $end, $exclude_id = null) {
     // ALGORITHM:
     // An overlap occurs if: (NewStart < ExistingEnd) AND (NewEnd > ExistingStart).
-    // We only check active items (is_deleted = 0).
-    $sql = "SELECT title, start_time, end_time FROM activities 
+    // UPDATED: Using new table 'event_activities'
+    $sql = "SELECT title, start_time, end_time FROM event_activities 
             WHERE event_id = ? 
             AND activity_date = ? 
             AND is_deleted = 0 
@@ -78,13 +78,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 
     // SAVE TO DATABASE
-    $stmt = $conn->prepare("INSERT INTO activities (event_id, title, venue, activity_date, start_time, end_time, description) VALUES (?, ?, ?, ?, ?, ?, ?)");
+    // UPDATED: Table 'event_activities'
+    $stmt = $conn->prepare("INSERT INTO event_activities (event_id, title, venue, activity_date, start_time, end_time, description) VALUES (?, ?, ?, ?, ?, ?, ?)");
     $stmt->bind_param("issssss", $event_id, $title, $venue, $date, $start, $end, $desc);
     
     if ($stmt->execute()) {
         header("Location: ../public/activities.php?success=Activity scheduled successfully");
     } else {
-        header("Location: ../public/activities.php?error=Database error");
+        // If the DB trigger fails (unlikely due to PHP check above), this catches it.
+        header("Location: ../public/activities.php?error=Database error: " . $conn->error);
     }
     exit();
 }
@@ -121,13 +123,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 
     // UPDATE DATABASE
-    $stmt = $conn->prepare("UPDATE activities SET title=?, venue=?, activity_date=?, start_time=?, end_time=?, description=? WHERE id=?");
+    // UPDATED: Table 'event_activities'
+    $stmt = $conn->prepare("UPDATE event_activities SET title=?, venue=?, activity_date=?, start_time=?, end_time=?, description=? WHERE id=?");
     $stmt->bind_param("ssssssi", $title, $venue, $date, $start, $end, $desc, $id);
     
     if ($stmt->execute()) {
         header("Location: ../public/activities.php?success=Activity updated");
     } else {
-        header("Location: ../public/activities.php?error=Update failed");
+        header("Location: ../public/activities.php?error=Update failed: " . $conn->error);
     }
     exit();
 }
@@ -137,17 +140,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 // This allows us to restore it later if it was a mistake.
 if (isset($_GET['action']) && $_GET['action'] === 'archive') {
     $id = (int)$_GET['id'];
-    $conn->query("UPDATE activities SET is_deleted = 1 WHERE id = $id");
+    // UPDATED: Table 'event_activities'
+    $conn->query("UPDATE event_activities SET is_deleted = 1 WHERE id = $id");
     header("Location: ../public/activities.php?success=Activity archived");
     exit();
 }
 
 // ACTION 4: RESTORE (UN-ARCHIVE)
 // Logic: Set 'is_deleted' back to 0 to make it visible again.
-if (isset($_GET['action']) && $_GET['action'] === 'restore') {
+if (isset($_GET['action']) && $_GET['action'] === 'delete') {
     $id = (int)$_GET['id'];
-    $conn->query("UPDATE activities SET is_deleted = 0 WHERE id = $id");
-    header("Location: ../public/activities.php?success=Activity restored");
+    // Delete from database
+    $conn->query("DELETE FROM event_activities WHERE id = $id");
+    header("Location: ../public/activities.php?success=Activity deleted permanently");
     exit();
 }
 ?>

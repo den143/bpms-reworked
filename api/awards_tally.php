@@ -16,12 +16,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         exit();
     }
     
-    // Logic: Delegate complex calculation to the Model
-    $data = AwardCalculator::getAwardsList((int)$_GET['event_id']);
+    $event_id = (int)$_GET['event_id'];
+
+    // Logic: Delegate complex calculation to the Model (AwardCalculator needs update in Batch 3)
+    $data = AwardCalculator::getAwardsList($event_id);
     
     // Logic: Fetch all contestants (ID & Name) to populate the "Manual Selection" dropdowns in the UI.
-    $cont_sql = "SELECT cd.id, u.name FROM contestant_details cd JOIN users u ON cd.user_id = u.id WHERE cd.event_id = " . (int)$_GET['event_id'];
-    $contestants = $conn->query($cont_sql)->fetch_all(MYSQLI_ASSOC);
+    $cont_sql = "SELECT ec.id, u.name, ec.contestant_number 
+                 FROM event_contestants ec 
+                 JOIN users u ON ec.user_id = u.id 
+                 WHERE ec.event_id = ? 
+                 AND ec.is_deleted = 0 
+                 ORDER BY ec.contestant_number ASC";
+                 
+    $stmt = $conn->prepare($cont_sql);
+    $stmt->bind_param("i", $event_id);
+    $stmt->execute();
+    $contestants = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
     echo json_encode(['status' => 'success', 'awards' => $data, 'contestants' => $contestants]);
     exit();
@@ -33,23 +44,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Decode JSON input from the frontend
     $input = json_decode(file_get_contents('php://input'), true);
     $award_id = (int)$input['award_id'];
-    $contestant_id = (int)$input['contestant_id']; // This is the Contestant Detail ID
-    $event_id = (int)$input['event_id'];
+    $contestant_id = (int)$input['contestant_id']; // This is event_contestants.id
 
     if (!$award_id || !$contestant_id) {
         echo json_encode(['error' => 'Invalid Input']);
         exit();
     }
 
-    // LOGIC: UPSERT (Update if exists, Insert if new)
-    // If a winner is already assigned for this award, we update it. If not, we insert a new row.
-    $stmt = $conn->prepare("INSERT INTO award_winners (award_id, contestant_id, event_id) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE contestant_id = VALUES(contestant_id)");
-    $stmt->bind_param("iii", $award_id, $contestant_id, $event_id);
+    // LOGIC: Replace Previous Winner
+    // To ensure only ONE winner per award (for manual selection), we Delete then Insert.
     
-    if ($stmt->execute()) {
+    $conn->begin_transaction();
+    try {
+        // 1. Clear existing 'Winner' for this award
+        $del = $conn->prepare("DELETE FROM award_winners WHERE award_id = ? AND title_label = 'Winner'");
+        $del->bind_param("i", $award_id);
+        $del->execute();
+
+        // 2. Insert the new winner
+        $stmt = $conn->prepare("INSERT INTO award_winners (award_id, contestant_id, title_label) VALUES (?, ?, 'Winner')");
+        $stmt->bind_param("ii", $award_id, $contestant_id);
+        $stmt->execute();
+
+        $conn->commit();
         echo json_encode(['status' => 'success']);
-    } else {
-        echo json_encode(['error' => 'Database error']);
+
+    } catch (Exception $e) {
+        $conn->rollback();
+        echo json_encode(['error' => 'Database error: ' . $e->getMessage()]);
     }
     exit();
 }

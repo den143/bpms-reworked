@@ -11,12 +11,13 @@ require_once __DIR__ . '/../app/models/Event.php';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // 1. INPUT SANITIZATION
-    $name  = trim($_POST['event_name'] ?? '');
+    // FIX: Updated to look for 'title' (which matches the dashboard.php form), not 'event_name'
+    $title = trim($_POST['title'] ?? '');
     $date  = trim($_POST['event_date'] ?? '');
     $venue = trim($_POST['venue'] ?? '');
 
     // Validation: Ensure required fields are present
-    if (empty($name) || empty($date) || empty($venue)) {
+    if (empty($title) || empty($date) || empty($venue)) {
         $_SESSION['error'] = "All fields are required.";
         header("Location: ../public/dashboard.php");
         exit();
@@ -30,8 +31,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     // 2. CREATE EVENT (Delegated to Model)
-    // We pass the current user's ID so the event is linked to them.
-    $success = Event::create($_SESSION['user_id'], $name, $date, $venue);
+    // We pass the current user's ID. The Model will save this into the 'manager_id' column.
+    // The Model will also handle setting other events to 'Inactive' automatically.
+    $success = Event::create($_SESSION['user_id'], $title, $date, $venue);
 
     if ($success) {
         // Logic: Turn off the "Force Create" modal now that an event exists.
@@ -44,3 +46,4 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     header("Location: ../public/dashboard.php");
     exit();
 }
+?>
