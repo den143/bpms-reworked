@@ -52,7 +52,9 @@ if ($active_event) {
                 $c_query = $conn->query("SELECT * FROM criteria WHERE segment_id = $sid AND is_deleted = 0 ORDER BY ordering ASC");
                 $seg['criteria'] = $c_query ? $c_query->fetch_all(MYSQLI_ASSOC) : [];
                 
-                $total_round_percentage += $seg['weight_percentage'];
+                // FIX: Use correct DB column 'weight_percent'
+                $total_round_percentage += $seg['weight_percent'];
+                
                 $seg['total_points'] = 0;
                 foreach ($seg['criteria'] as $c) { $seg['total_points'] += $c['max_score']; }
             }
@@ -138,7 +140,7 @@ if ($active_event) {
                                         <div class="segment-title">
                                             <h3>
                                                 <?= htmlspecialchars($seg_row['title']) ?>
-                                                <span class="weight-badge"><?= $seg_row['weight_percentage'] ?>%</span>
+                                                <span class="weight-badge"><?= $seg_row['weight_percent'] ?>%</span>
                                             </h3>
                                             <?php if (!empty($seg_row['description'])): ?>
                                                 <span class="segment-desc"><?= htmlspecialchars($seg_row['description']) ?></span>
@@ -226,8 +228,8 @@ if ($active_event) {
                 <input type="hidden" name="round_id" value="<?= $active_round_id ?>">
                 <input type="hidden" name="segment_id" id="seg_id">
                 
-                <div class="form-group"><label>Title</label><input type="text" name="title" id="seg_title" class="form-control" required></div>
-                <div class="form-group"><label>Description</label><input type="text" name="description" id="seg_desc" class="form-control"></div>
+                <div class="form-group"><label>Title</label><input type="text" name="title" placeholder="e.g. Evening Gown" id="seg_title" class="form-control" required></div>
+                <div class="form-group"><label>Brief description</label><input type="text" name="description" placeholder="e.g. Judges elegance, poise, and overall presentation" id="seg_desc" class="form-control"></div>
                 <div class="form-group"><label>Weight (%)</label><input type="number" step="0.01" name="weight_percentage" id="seg_weight" class="form-control" required></div>
                 <div class="form-group"><label>Order</label><input type="number" name="ordering" id="seg_order" class="form-control" value="1"></div>
                 
@@ -293,7 +295,10 @@ if ($active_event) {
             document.getElementById('seg_id').value = seg.id;
             document.getElementById('seg_title').value = seg.title;
             document.getElementById('seg_desc').value = seg.description;
-            document.getElementById('seg_weight').value = seg.weight_percentage;
+            
+            // FIX: Map correct DB column 'weight_percent' to input
+            document.getElementById('seg_weight').value = seg.weight_percent;
+            
             document.getElementById('seg_order').value = seg.ordering;
             document.getElementById('segmentModal').style.display = 'flex';
         }

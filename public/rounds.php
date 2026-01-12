@@ -27,7 +27,8 @@ if ($active_event) {
     if (!empty($rounds)) {
         $last_round = end($rounds);
         $next_order = $last_round['ordering'] + 1;
-        $previous_top_n = $last_round['contestants_to_advance'];
+        // FIX: Use 'qualify_count' instead of 'contestants_to_advance'
+        $previous_top_n = $last_round['qualify_count'];
     }
 }
 ?>
@@ -96,7 +97,7 @@ if ($active_event) {
                                     <div class="round-meta">
                                         <span><i class="fas fa-sort-numeric-down"></i> Sequence: #<?= $r['ordering'] ?></span>
                                         <span><i class="fas fa-filter"></i> 
-                                            <?= ($r['advancement_rule'] === 'winner') ? 'Final Winner' : 'Top ' . $r['contestants_to_advance'] . ' Advance' ?>
+                                            <?= ($r['type'] === 'Final') ? 'Final Winner' : 'Top ' . $r['qualify_count'] . ' Advance' ?>
                                         </span>
                                     </div>
                                 </div>
@@ -171,16 +172,16 @@ if ($active_event) {
                     </div>
                     <div style="flex:1;">
                         <label>Advancement Rule</label>
-                        <select name="advancement_rule" id="r_rule" class="form-control" onchange="toggleAdvanceInput()">
-                            <option value="top_n">Elimination (Top N)</option>
-                            <option value="winner">Final (Declare Winner)</option>
+                        <select name="type" id="r_rule" class="form-control" onchange="toggleAdvanceInput()">
+                            <option value="Elimination">Elimination (Top N)</option>
+                            <option value="Final">Final (Declare Winner)</option>
                         </select>
                     </div>
                 </div>
                 
                 <div class="form-group" id="advanceGroup">
                     <label>How many advance to next round?</label>
-                    <input type="number" name="contestants_to_advance" id="r_advance" class="form-control" value="5">
+                    <input type="number" name="qualify_count" id="r_advance" class="form-control" required>
                 </div>
                 
                 <div style="text-align:right; margin-top:20px;">
@@ -227,8 +228,10 @@ if ($active_event) {
             document.getElementById('round_id').value = round.id;
             document.getElementById('r_title').value = round.title;
             document.getElementById('r_order').value = round.ordering;
-            document.getElementById('r_rule').value = round.advancement_rule;
-            document.getElementById('r_advance').value = round.contestants_to_advance;
+            
+            // FIX: Map correct JSON properties
+            document.getElementById('r_rule').value = round.type;
+            document.getElementById('r_advance').value = round.qualify_count;
             
             const alert = document.getElementById('limitAlert');
             if(alert) alert.style.display = 'none'; 
@@ -242,7 +245,8 @@ if ($active_event) {
         function toggleAdvanceInput() {
             const rule = document.getElementById('r_rule').value;
             const group = document.getElementById('advanceGroup');
-            group.style.display = (rule === 'winner') ? 'none' : 'block';
+            // FIX: Check against 'Final' instead of 'winner'
+            group.style.display = (rule === 'Final') ? 'none' : 'block';
         }
 
         // --- TRAFFIC CONTROLLER LOGIC ---
@@ -287,7 +291,8 @@ if ($active_event) {
             const container = document.getElementById('toast-container');
             const toast = document.createElement('div');
             toast.className = `toast ${type}`;
-            toast.innerHTML = `<i class="fas fa-${type==='success'?'check':'exclamation'}-circle"></i> <span>${message}</span>`;
+            const icon = type === 'success' ? '<i class="fas fa-check-circle"></i>' : '<i class="fas fa-exclamation-circle"></i>';
+            toast.innerHTML = `${icon} <span>${message}</span>`;
             container.appendChild(toast);
             setTimeout(() => { toast.remove(); }, 3500);
         }

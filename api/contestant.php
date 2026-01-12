@@ -85,8 +85,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $subject = "Official Contestant Registration";
             $body = "<h2>Welcome, $name!</h2><p>You have been registered for <b>$evt_name</b> as Contestant #$next_num.</p><div style='background:#f3f4f6; padding:15px;'><strong>Credentials:</strong><br>Email: $email<br>Password: $pass</div><p><a href='$site_link'>Login Now</a></p>";
             
-            sendCustomEmail($email, $subject, $body);
-
+            queueEmail($email, $subject, $body); 
+            
             $conn->commit();
             header("Location: ../public/contestants.php?success=Contestant added successfully");
 

@@ -1,4 +1,7 @@
 <?php
+// public/contestant_dashboard.php
+
+// 1. SECURITY & CONFIG
 require_once __DIR__ . '/../app/core/guard.php';
 requireLogin();
 requireRole('Contestant');
@@ -6,51 +9,78 @@ require_once __DIR__ . '/../app/config/database.php';
 
 $user_id = $_SESSION['user_id'];
 $message = "";
+$msg_type = ""; 
 
-// 1. HANDLE PROFILE UPDATES
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_bio') {
-    $new_motto = trim($_POST['motto']);
-    $new_hometown = trim($_POST['hometown']);
+// 2. HANDLE FORM SUBMISSIONS
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     
-    // A. HANDLE PHOTO UPLOAD
-    if (isset($_FILES['photo']) && $_FILES['photo']['error'] === UPLOAD_ERR_OK) {
-        $allowed_ext = ['jpg', 'jpeg', 'png', 'gif'];
-        $file_name = $_FILES['photo']['name'];
-        $file_ext = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
+    // A. Update Profile (Bio/Photo)
+    if ($_POST['action'] === 'update_bio') {
+        $new_motto = trim($_POST['motto']);
+        $new_hometown = trim($_POST['hometown']);
+        
+        // Photo Upload
+        if (isset($_FILES['photo']) && $_FILES['photo']['error'] === UPLOAD_ERR_OK) {
+            $allowed_ext = ['jpg', 'jpeg', 'png'];
+            $file_name = $_FILES['photo']['name'];
+            $file_ext = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
 
-        if (in_array($file_ext, $allowed_ext)) {
-            // Generate unique name: contestant_ID_TIMESTAMP.ext
-            $new_filename = "contestant_" . $user_id . "_" . time() . "." . $file_ext;
-            $upload_dir = __DIR__ . '/assets/uploads/contestants/';
-            
-            // Create directory if missing
-            if (!is_dir($upload_dir)) {
-                mkdir($upload_dir, 0777, true);
-            }
+            if (in_array($file_ext, $allowed_ext)) {
+                $new_filename = "contestant_" . $user_id . "_" . time() . "." . $file_ext;
+                $upload_dir = __DIR__ . '/assets/uploads/contestants/';
+                if (!is_dir($upload_dir)) mkdir($upload_dir, 0777, true);
 
-            if (move_uploaded_file($_FILES['photo']['tmp_name'], $upload_dir . $new_filename)) {
-                // Update Photo in DB (Table: event_contestants)
-                $photo_stmt = $conn->prepare("UPDATE event_contestants SET photo = ? WHERE user_id = ?");
-                $photo_stmt->bind_param("si", $new_filename, $user_id);
-                $photo_stmt->execute();
+                if (move_uploaded_file($_FILES['photo']['tmp_name'], $upload_dir . $new_filename)) {
+                    $photo_stmt = $conn->prepare("UPDATE event_contestants SET photo = ? WHERE user_id = ?");
+                    $photo_stmt->bind_param("si", $new_filename, $user_id);
+                    $photo_stmt->execute();
+                }
             }
+        }
+
+        $upd = $conn->prepare("UPDATE event_contestants SET motto = ?, hometown = ? WHERE user_id = ?");
+        $upd->bind_param("ssi", $new_motto, $new_hometown, $user_id);
+        if ($upd->execute()) {
+            $message = "Profile updated successfully.";
+            $msg_type = "success";
         }
     }
 
-    // B. UPDATE TEXT DETAILS
-    // Updated: Table 'event_contestants'
-    $upd = $conn->prepare("UPDATE event_contestants SET motto = ?, hometown = ? WHERE user_id = ?");
-    $upd->bind_param("ssi", $new_motto, $new_hometown, $user_id);
-    if ($upd->execute()) {
-        $message = "Profile updated successfully.";
+    // B. Update Password
+    if ($_POST['action'] === 'update_password') {
+        $current_pass = $_POST['current_password'];
+        $new_pass     = $_POST['new_password'];
+        $confirm_pass = $_POST['confirm_password'];
+
+        if ($new_pass !== $confirm_pass) {
+            $message = "New passwords do not match.";
+            $msg_type = "error";
+        } elseif (strlen($new_pass) < 6) {
+            $message = "Password must be at least 6 characters.";
+            $msg_type = "error";
+        } else {
+            $stmt = $conn->prepare("SELECT password FROM users WHERE id = ?");
+            $stmt->bind_param("i", $user_id);
+            $stmt->execute();
+            $res = $stmt->get_result()->fetch_assoc();
+
+            if ($res && password_verify($current_pass, $res['password'])) {
+                $new_hash = password_hash($new_pass, PASSWORD_DEFAULT);
+                $upd_pass = $conn->prepare("UPDATE users SET password = ? WHERE id = ?");
+                $upd_pass->bind_param("si", $new_hash, $user_id);
+                if ($upd_pass->execute()) {
+                    $message = "Password changed successfully.";
+                    $msg_type = "success";
+                }
+            } else {
+                $message = "Incorrect current password.";
+                $msg_type = "error";
+            }
+        }
     }
 }
 
-// 2. FETCH DATA
-// Updated: 
-// - 'contestant_details' -> 'event_contestants' (aliased as ec)
-// - 'events.name' -> 'events.title'
-// - 'vital_stats' constructed via CONCAT from bust, waist, hips
+// 3. FETCH DATA
 $sql = "SELECT u.name, u.email, u.status, 
                ec.age, ec.height, 
                CONCAT(ec.bust, '-', ec.waist, '-', ec.hips) as vital_stats, 
@@ -66,19 +96,13 @@ $stmt->bind_param("i", $user_id);
 $stmt->execute();
 $data = $stmt->get_result()->fetch_assoc();
 
-// 3. SECURITY CHECK
-if ($data['event_status'] === 'Inactive') {
-    die("Access Restricted. The event is currently inactive."); 
-}
+if ($data['event_status'] === 'Inactive') die("Access Restricted: Event is inactive.");
 
-// 4. ACTIVITIES
-// Updated: Table 'event_activities'
+// 4. FETCH SCHEDULE
 $activities = [];
 if ($data['event_id']) {
-    $act_sql = "SELECT title, description, activity_date, start_time, venue 
-                FROM event_activities 
-                WHERE event_id = ? AND is_deleted = 0 
-                ORDER BY activity_date ASC, start_time ASC";
+    $act_sql = "SELECT title, venue, activity_date, start_time FROM event_activities 
+                WHERE event_id = ? AND is_deleted = 0 ORDER BY activity_date ASC, start_time ASC";
     $act_stmt = $conn->prepare($act_sql);
     $act_stmt->bind_param("i", $data['event_id']);
     $act_stmt->execute();
@@ -103,283 +127,357 @@ if ($data['event_date']) {
     <title>Candidate Portal - <?= htmlspecialchars($data['event_name']) ?></title>
     <link rel="stylesheet" href="./assets/css/style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
     <style>
-        /* --- MOBILE BASE STYLES --- */
-        :root { --slate-900: #0f172a; --slate-800: #1e293b; --gold: #F59E0B; }
-        
-        body { background-color: #f8fafc; overflow-x: hidden; }
-
-        /* Navbar with Hamburger */
-        .navbar {
-            background: white; border-bottom: 1px solid #e2e8f0;
-            padding: 15px 20px; position: sticky; top: 0; z-index: 50;
-            display: flex; justify-content: space-between; align-items: center;
-        }
-        .nav-brand { font-weight: 800; color: var(--slate-900); font-size: 1.1rem; }
-        .menu-toggle { display: none; font-size: 24px; color: var(--slate-900); cursor: pointer; border: none; background: none; }
-
-        /* Mobile Sidebar Transformation */
-        .sidebar { background-color: var(--slate-900); transition: transform 0.3s ease; }
-        .sidebar-header { background-color: #020617; border-bottom: 1px solid var(--slate-800); }
-        .sidebar-menu li a { color: #cbd5e1; }
-        .sidebar-menu li a.active { background: rgba(255,255,255,0.1); color: var(--gold); border-left: 4px solid var(--gold); }
-
-        /* Main Content Layout */
-        .container { padding: 20px; max-width: 1200px; margin: 0 auto; }
-        .info-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 25px; }
-
-        /* Cards & Widgets */
-        .welcome-banner {
-            background: linear-gradient(135deg, #F59E0B 0%, #B45309 100%);
-            color: white; padding: 30px; border-radius: 16px; margin-bottom: 25px;
-            position: relative; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(245, 158, 11, 0.2);
-        }
-        .candidate-number-badge {
-            position: absolute; right: 20px; top: 50%; transform: translateY(-50%);
-            font-size: 80px; font-weight: 900; opacity: 0.15; color: white;
-            pointer-events: none;
+        /* --- RESET & BASICS --- */
+        :root { --slate-900: #0f172a; --slate-800: #1e293b; --gold: #F59E0B; --gold-dark: #b45309; }
+        * { box-sizing: border-box; }
+        body { 
+            background-color: #f1f5f9; 
+            font-family: 'Segoe UI', sans-serif; 
+            margin: 0; padding: 0; 
+            min-height: 100vh;
+            overflow-x: hidden; /* Prevent horizontal scroll */
+            overflow-y: auto; 
+            -webkit-overflow-scrolling: touch; 
         }
 
-        .profile-card {
-            background: white; border-radius: 16px; padding: 25px;
-            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); text-align: center;
-            border: 1px solid #e2e8f0; position: sticky; top: 90px;
+        /* --- HEADER --- */
+        .page-header { 
+            background: white; 
+            padding: 10px 20px; 
+            border-bottom: 1px solid #e2e8f0; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            position: sticky; 
+            top: 0; 
+            z-index: 100;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            width: 100%;
         }
         
-        /* New Profile Image Styles */
-        .profile-img-wrapper {
-            position: relative; display: inline-block; margin-bottom: 15px;
-        }
-        .profile-img-wrapper img {
-            width: 120px; height: 120px; border-radius: 50%; object-fit: cover;
-            border: 4px solid #f8fafc; box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        }
-        .camera-btn {
-            position: absolute; bottom: 5px; right: 5px;
-            background: #0f172a; color: white; width: 32px; height: 32px;
-            border-radius: 50%; display: flex; align-items: center; justify-content: center;
-            cursor: pointer; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            transition: transform 0.2s;
-        }
-        .camera-btn:hover { transform: scale(1.1); background: var(--gold); }
+        .header-brand { display: flex; align-items: center; gap: 12px; }
+        .logo-img { height: 42px; width: auto; }
+        .brand-text { display: flex; flex-direction: column; line-height: 1.2; }
+        .brand-title { font-weight: 800; font-size: 1.2rem; color: var(--slate-900); letter-spacing: -0.5px; }
+        .brand-sub { font-size: 0.75rem; color: #64748b; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
 
-        /* Timeline / Schedule */
-        .timeline { list-style: none; padding: 0; margin: 0; }
-        .timeline-item {
-            position: relative; padding-left: 35px; margin-bottom: 25px;
+        .btn-logout {
+            background: #ef4444; color: white; text-decoration: none;
+            padding: 8px 16px; border-radius: 6px; font-weight: 600; font-size: 0.9rem;
+            display: flex; align-items: center; gap: 8px; transition: background 0.2s;
+            white-space: nowrap;
         }
-        .timeline-item::before {
-            content: ''; position: absolute; left: 0; top: 0; bottom: 0;
-            width: 2px; background: #e2e8f0;
+        .btn-logout:hover { background: #dc2626; }
+
+        /* --- LAYOUT --- */
+        .container { 
+            max-width: 1100px; 
+            margin: 25px auto; 
+            padding: 0 20px; /* Safe padding for sides */
+            padding-bottom: 50px; 
+            width: 100%;
         }
-        .timeline-item::after {
-            content: ''; position: absolute; left: -4px; top: 6px;
-            width: 10px; height: 10px; border-radius: 50%; background: var(--gold);
-            border: 2px solid white;
-        }
-        .timeline-date { font-size: 0.75rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; }
-        .timeline-card {
-            background: white; padding: 15px; border-radius: 8px; margin-top: 5px;
-            border: 1px solid #f1f5f9; box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        
+        .dashboard-grid { 
+            display: grid; 
+            grid-template-columns: 320px 1fr; 
+            gap: 25px; 
+            align-items: start; 
+            width: 100%;
         }
 
-        /* Mobile Overlay */
-        .sidebar-overlay {
-            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.5); z-index: 900; backdrop-filter: blur(2px);
+        /* --- LEFT COLUMN: COMP CARD --- */
+        .comp-card { 
+            background: white; border-radius: 16px; overflow: hidden; 
+            box-shadow: 0 4px 10px rgba(0,0,0,0.05); text-align: center; 
+            border: 1px solid #e2e8f0; 
+            position: sticky; top: 90px;
+            width: 100%;
         }
+        .comp-header { background: var(--slate-900); height: 90px; position: relative; }
+        .comp-header::after { content: ''; position: absolute; bottom: -1px; left: 0; width: 100%; height: 20px; background: white; border-radius: 20px 20px 0 0; }
+        
+        .profile-img { width: 130px; height: 130px; border-radius: 50%; object-fit: cover; border: 5px solid white; position: relative; margin-top: -65px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); background: #f1f5f9; }
+        
+        .comp-body { padding: 10px 20px 25px; }
+        .candidate-name { font-size: 1.3rem; font-weight: 800; color: var(--slate-900); margin: 10px 0 5px; }
+        .candidate-loc { color: var(--gold-dark); font-weight: 700; text-transform: uppercase; font-size: 0.8rem; letter-spacing: 1px; margin-bottom: 15px; }
+        .badge-number { background: var(--slate-900); color: var(--gold); display: inline-block; padding: 5px 15px; border-radius: 20px; font-weight: 800; font-size: 0.85rem; margin-bottom: 15px; }
 
-        /* --- RESPONSIVE MEDIA QUERIES --- */
+        .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px; text-align: left; }
+        .stat-box { background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0; }
+        .stat-label { font-size: 0.7rem; color: #64748b; text-transform: uppercase; font-weight: 700; }
+        .stat-val { font-size: 0.9rem; font-weight: 600; color: var(--slate-900); }
+
+        /* --- RIGHT COLUMN: MAIN PANEL --- */
+        .action-center { width: 100%; }
+
+        .welcome-banner { 
+            background: linear-gradient(135deg, #F59E0B 0%, #d97706 100%); color: white; 
+            padding: 20px 25px; border-radius: 12px; margin-bottom: 20px; 
+            display: flex; justify-content: space-between; align-items: center; 
+            box-shadow: 0 4px 8px rgba(245, 158, 11, 0.2); 
+            width: 100%;
+        }
+        .wb-title { font-size: 1.4rem; font-weight: 800; line-height: 1.1; margin-bottom: 4px; }
+        .wb-sub { font-size: 0.9rem; opacity: 0.95; display:flex; align-items:center; gap:6px; }
+        .countdown { text-align: center; background: rgba(255,255,255,0.25); padding: 8px 16px; border-radius: 8px; backdrop-filter: blur(4px); white-space: nowrap; }
+        .count-num { font-size: 1.6rem; font-weight: 800; line-height: 1; }
+        .count-lbl { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; }
+
+        .card-panel { 
+            background: white; border-radius: 12px; padding: 25px; 
+            border: 1px solid #e2e8f0; box-shadow: 0 2px 4px rgba(0,0,0,0.05); 
+            min-height: 450px; 
+            width: 100%;
+        }
+        
+        /* TABS */
+        .tabs-nav { display: flex; border-bottom: 1px solid #e2e8f0; margin-bottom: 25px; gap: 5px; width: 100%; }
+        .tab-btn { 
+            background: none; border: none; padding: 12px 20px; 
+            font-size: 0.95rem; font-weight: 600; color: #64748b; 
+            cursor: pointer; position: relative; bottom: -1px; transition: all 0.2s; 
+        }
+        .tab-btn:hover { color: var(--slate-900); background: #f8fafc; border-radius: 6px 6px 0 0; }
+        .tab-btn.active { color: var(--slate-900); border-bottom: 3px solid var(--slate-900); background: white; }
+
+        .tab-content { display: none; animation: fadeIn 0.3s ease; }
+        .tab-content.active { display: block; }
+
+        /* TIMELINE */
+        .timeline { list-style: none; padding: 0; margin: 0; width: 100%; }
+        .timeline li { position: relative; padding-left: 30px; margin-bottom: 25px; }
+        .timeline li::before { content: ''; position: absolute; left: 0; top: 6px; width: 12px; height: 12px; border-radius: 50%; background: var(--gold); border: 2px solid white; box-shadow: 0 0 0 1px var(--gold); }
+        .timeline li::after { content: ''; position: absolute; left: 5px; top: 22px; bottom: -15px; width: 2px; background: #e2e8f0; }
+        .timeline li:last-child::after { display: none; }
+        .tl-date { font-size: 0.8rem; font-weight: 700; color: #94a3b8; text-transform: uppercase; margin-bottom: 4px; }
+        .tl-title { font-weight: 700; color: var(--slate-900); font-size: 1.05rem; margin-bottom: 2px; }
+        .tl-venue { font-size: 0.9rem; color: #64748b; }
+
+        /* FORM ELEMENTS */
+        .form-group { margin-bottom: 20px; width: 100%; }
+        .form-group label { display: block; margin-bottom: 8px; font-size: 0.9rem; font-weight: 700; color: #334155; }
+        .form-control { width: 100%; padding: 12px 15px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 1rem; color: #0f172a; max-width: 100%; }
+        .form-control:focus { border-color: var(--gold); outline: none; box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15); }
+        .btn-save { background: var(--slate-900); color: white; border: none; padding: 14px 20px; border-radius: 8px; font-weight: 700; font-size: 1rem; cursor: pointer; width: 100%; transition: background 0.2s; }
+        .btn-save:hover { background: #334155; }
+
+        /* TOAST */
+        .toast { padding: 15px; border-radius: 8px; margin-bottom: 20px; font-weight: 600; display: flex; align-items: center; gap: 10px; font-size: 0.95rem; width: 100%; }
+        .toast.success { background: #ecfdf5; color: #059669; border: 1px solid #d1fae5; }
+        .toast.error { background: #fef2f2; color: #dc2626; border: 1px solid #fee2e2; }
+
+        /* --- MOBILE RESPONSIVE FIX --- */
         @media (max-width: 900px) {
-            .info-grid { grid-template-columns: 1fr; } /* Stack Grid */
-            .profile-card { position: static; margin-bottom: 30px; order: -1; } /* Move Profile to Top */
-        }
-
-        @media (max-width: 768px) {
-            /* Sidebar Logic */
-            .main-wrapper { flex-direction: column; }
-            .sidebar { 
-                position: fixed; top: 0; left: 0; height: 100vh; width: 260px; z-index: 1000;
-                transform: translateX(-100%); /* Hide by default */
-            }
-            .sidebar.active { transform: translateX(0); box-shadow: 5px 0 15px rgba(0,0,0,0.2); }
-            .content-area { margin-left: 0; width: 100%; }
-            .menu-toggle { display: block; }
-            .sidebar-overlay.active { display: block; }
-
-            /* Font & Spacing Adjustments */
-            .container { padding: 15px; }
-            .welcome-banner { padding: 20px; text-align: center; }
-            .welcome-banner .flex-stats { justify-content: center; }
-            .candidate-number-badge { font-size: 60px; right: 50%; transform: translate(50%, -50%); opacity: 0.1; }
             
-            /* Better Form Touch Targets */
-            button, input, textarea { font-size: 16px; } /* Prevents iOS zoom */
-            .navbar-title { display: none; } /* Hide breadcrumb on mobile to save space */
+            /* Switch to Flexbox Column for better stacking */
+            .dashboard-grid { 
+                display: flex; 
+                flex-direction: column; 
+                gap: 25px; 
+            }
+            
+            .container { 
+                padding: 0 15px; /* Ensure 15px gap on edges */
+                margin-top: 20px;
+            }
+
+            /* Header Adjustments */
+            .page-header { padding: 12px 15px; }
+            .brand-title { font-size: 1.1rem; }
+            .brand-sub { display: none; } 
+            .logo-img { height: 32px; }
+
+            /* Comp Card Adjustments */
+            .comp-card { 
+                position: relative; 
+                top: 0; 
+                z-index: 1; 
+                margin-bottom: 0;
+            }
+            .profile-img { width: 110px; height: 110px; margin-top: -55px; }
+            .comp-header { height: 75px; }
+            
+            /* Banner Adjustments */
+            .welcome-banner { flex-direction: column; text-align: center; gap: 15px; padding: 20px; }
+            .wb-sub { justify-content: center; }
+
+            /* Tabs Scrollable on Mobile */
+            .tabs-nav { overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; }
+            .tab-btn { flex: 0 0 auto; padding: 12px 20px; }
+            
+            /* Ensure forms don't overflow */
+            .card-panel { padding: 20px; }
         }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
 <body>
 
-    <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
-
-    <div class="main-wrapper">
+    <header class="page-header">
+        <div class="header-brand">
+            <img src="./assets/images/BPMS_logo.png" alt="Logo" class="logo-img" onerror="this.style.display='none'"> 
+            <div class="brand-text">
+                <span class="brand-title">BPMS</span>
+                <span class="brand-sub">Beauty Pageant Management System</span>
+            </div>
+        </div>
         
-        <?php require_once __DIR__ . '/../app/views/partials/sidebar.php'; ?>
+        <a href="logout.php" class="btn-logout" onclick="return confirm('Are you sure you want to log out?');">
+            <i class="fas fa-sign-out-alt"></i> 
+            <span>Logout</span>
+        </a>
+    </header>
 
-        <div class="content-area">
+    <div class="container">
+        
+        <?php if ($message): ?>
+            <div class="toast <?= $msg_type ?>">
+                <i class="fas <?= $msg_type == 'success' ? 'fa-check-circle' : 'fa-exclamation-circle' ?>"></i>
+                <?= htmlspecialchars($message) ?>
+            </div>
+        <?php endif; ?>
+
+        <div class="dashboard-grid">
             
-            <div class="navbar">
-                <div style="display:flex; align-items:center; gap:15px;">
-                    <button class="menu-toggle" onclick="toggleSidebar()">
-                        <i class="fas fa-bars"></i>
-                    </button>
-                    <div class="nav-brand">Candidate Portal</div>
-                </div>
-                <div style="font-size:14px; color:#64748b; font-weight:600;">
-                    <i class="fas fa-user-circle"></i> <?= htmlspecialchars(explode(' ', $data['name'])[0]) ?>
+            <div class="comp-card">
+                <div class="comp-header"></div>
+                <img src="./assets/uploads/contestants/<?= htmlspecialchars($data['photo']) ?>" onerror="this.src='./assets/images/default_user.png'" class="profile-img">
+                
+                <div class="comp-body">
+                    <h2 class="candidate-name"><?= htmlspecialchars($data['name']) ?></h2>
+                    <div class="candidate-loc"><i class="fas fa-map-marker-alt"></i> <?= htmlspecialchars($data['hometown']) ?></div>
+                    <div class="badge-number">CANDIDATE #<?= str_pad($data['contestant_number'], 2, '0', STR_PAD_LEFT) ?></div>
+
+                    <div class="stats-grid">
+                        <div class="stat-box">
+                            <div class="stat-label">Age</div>
+                            <div class="stat-val"><?= $data['age'] ?></div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-label">Height</div>
+                            <div class="stat-val"><?= htmlspecialchars($data['height']) ?></div>
+                        </div>
+                        <div class="stat-box" style="grid-column: span 2;">
+                            <div class="stat-label">Vital Stats</div>
+                            <div class="stat-val"><?= htmlspecialchars($data['vital_stats']) ?></div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <div class="container">
+            <div class="action-center">
                 
-                <?php if ($message): ?>
-                    <div class="toast success" style="margin-bottom: 20px; background: #10B981; color: white; padding: 15px; border-radius: 8px; font-weight:600;">
-                        <i class="fas fa-check-circle"></i> <?= htmlspecialchars($message) ?>
-                    </div>
-                <?php endif; ?>
-
                 <div class="welcome-banner">
-                    <div style="position: relative; z-index: 2;">
-                        <div style="font-size:12px; text-transform:uppercase; letter-spacing:1px; opacity:0.8; margin-bottom:5px;">Road to the Crown</div>
-                        <h2 style="margin:0; font-size:26px; line-height:1.2;"><?= htmlspecialchars($data['event_name']) ?></h2>
-                        
-                        <div class="flex-stats" style="margin-top: 25px; display: flex; gap: 30px;">
-                            <div>
-                                <div style="font-size: 24px; font-weight: 800;"><?= $days_left ?></div>
-                                <div style="font-size: 11px; opacity: 0.9; text-transform:uppercase;">Days Left</div>
-                            </div>
-                            <div>
-                                <div style="font-size: 24px; font-weight: 800;"><i class="fas fa-map-pin" style="font-size:18px;"></i></div>
-                                <div style="font-size: 11px; opacity: 0.9; text-transform:uppercase;"><?= htmlspecialchars($data['venue']) ?></div>
-                            </div>
-                        </div>
+                    <div>
+                        <div class="wb-title"><?= htmlspecialchars($data['event_name']) ?></div>
+                        <div class="wb-sub"><i class="fas fa-map-pin"></i> <?= htmlspecialchars($data['venue']) ?></div>
                     </div>
-                    <div class="candidate-number-badge">
-                        #<?= $data['contestant_number'] ? str_pad($data['contestant_number'], 2, '0', STR_PAD_LEFT) : '?' ?>
+                    <div class="countdown">
+                        <div class="count-num"><?= $days_left ?></div>
+                        <div class="count-lbl">Days Left</div>
                     </div>
                 </div>
 
-                <div class="info-grid">
-                    
-                    <div>
-                        <h3 style="margin-top:0; color:#1e293b; font-size:18px; margin-bottom:20px; display:flex; align-items:center; gap:10px;">
-                            <span style="background:#e0f2fe; color:#0284c7; width:30px; height:30px; display:flex; align-items:center; justify-content:center; border-radius:8px; font-size:14px;"><i class="fas fa-calendar-alt"></i></span>
-                            Schedule
-                        </h3>
+                <div class="card-panel">
+                    <div class="tabs-nav">
+                        <button class="tab-btn active" onclick="switchTab('timeline', event)">Schedule</button>
+                        <button class="tab-btn" onclick="switchTab('profile', event)">My Profile</button>
+                        <button class="tab-btn" onclick="switchTab('security', event)">Security</button>
+                    </div>
 
+                    <div id="tab-timeline" class="tab-content active">
                         <?php if (empty($activities)): ?>
-                            <div style="text-align:center; padding:30px; background:white; border-radius:12px; border:1px dashed #cbd5e1; color:#94a3b8;">
+                            <div style="text-align:center; padding:40px; color:#94a3b8;">
                                 <i class="far fa-calendar-times" style="font-size:30px; margin-bottom:10px;"></i>
-                                <p>No scheduled activities yet.</p>
+                                <p>No activities scheduled yet.</p>
                             </div>
                         <?php else: ?>
                             <ul class="timeline">
                                 <?php foreach ($activities as $act): 
-                                    $dateObj = new DateTime($act['activity_date']);
-                                    $timeObj = new DateTime($act['start_time']);
-                                    $isPast = $dateObj < new DateTime('today');
+                                    $d = new DateTime($act['activity_date']);
+                                    $t = new DateTime($act['start_time']);
                                 ?>
-                                <li class="timeline-item" style="<?= $isPast ? 'opacity:0.6;' : '' ?>">
-                                    <div class="timeline-date"><?= $dateObj->format('M d, Y') ?> • <?= $timeObj->format('g:i A') ?></div>
-                                    <div class="timeline-card">
-                                        <div style="font-weight: 700; color: #334155; margin-bottom:5px; font-size:15px;"><?= htmlspecialchars($act['title']) ?></div>
-                                        <div style="font-size: 13px; color: #64748b; display:flex; align-items:center; gap:6px;">
-                                            <i class="fas fa-map-marker-alt" style="color:#ef4444;"></i> <?= htmlspecialchars($act['venue']) ?>
-                                        </div>
-                                    </div>
+                                <li>
+                                    <div class="tl-date"><?= $d->format('M d') ?> • <?= $t->format('g:i A') ?></div>
+                                    <div class="tl-title"><?= htmlspecialchars($act['title']) ?></div>
+                                    <div class="tl-venue"><i class="fas fa-map-marker-alt" style="color:#ef4444"></i> <?= htmlspecialchars($act['venue']) ?></div>
                                 </li>
                                 <?php endforeach; ?>
                             </ul>
                         <?php endif; ?>
                     </div>
 
-                    <div>
-                        <form method="POST" enctype="multipart/form-data" class="profile-card">
+                    <div id="tab-profile" class="tab-content">
+                        <form method="POST" enctype="multipart/form-data">
                             <input type="hidden" name="action" value="update_bio">
                             
-                            <div class="profile-img-wrapper">
-                                <img id="profilePreview" src="./assets/uploads/contestants/<?= htmlspecialchars($data['photo']) ?>" 
-                                     onerror="this.src='./assets/images/default_user.png'" alt="Profile">
-                                
-                                <label for="photoUpload" class="camera-btn" title="Change Photo">
-                                    <i class="fas fa-camera"></i>
-                                </label>
-                                <input type="file" id="photoUpload" name="photo" accept="image/*" style="display:none;" onchange="previewImage(this)">
+                            <div class="form-group">
+                                <label>Official Hometown</label>
+                                <input type="text" name="hometown" class="form-control" value="<?= htmlspecialchars($data['hometown']) ?>" required>
                             </div>
                             
-                            <h3 style="margin:0; color:#0f172a; font-size:20px;"><?= htmlspecialchars($data['name']) ?></h3>
-                            <div style="color:#d97706; font-weight:700; font-size:13px; margin-bottom:20px; text-transform:uppercase; letter-spacing:0.5px;">
-                                <?= htmlspecialchars($data['hometown']) ?>
+                            <div class="form-group">
+                                <label>Motto / Advocacy</label>
+                                <textarea name="motto" rows="4" class="form-control" placeholder="Share your motto..."><?= htmlspecialchars($data['motto']) ?></textarea>
                             </div>
 
-                            <div style="background:#f8fafc; border-radius:8px; padding:15px; margin-bottom:20px;">
-                                <div style="display:flex; justify-content:space-between; font-size:14px; color:#475569; margin-bottom:8px;">
-                                    <span>Age</span> <strong><?= $data['age'] ?></strong>
-                                </div>
-                                <div style="display:flex; justify-content:space-between; font-size:14px; color:#475569;">
-                                    <span>Height</span> <strong><?= htmlspecialchars($data['height']) ?></strong>
-                                </div>
-                                <div style="display:flex; justify-content:space-between; font-size:14px; color:#475569; margin-top:8px;">
-                                    <span>Vital Stats</span> <strong><?= htmlspecialchars($data['vital_stats']) ?></strong>
-                                </div>
+                            <div class="form-group">
+                                <label>Update Profile Photo</label>
+                                <input type="file" name="photo" accept="image/*" class="form-control">
+                                <small style="color:#64748b; font-size:0.8rem; margin-top:5px; display:block;">Supported: JPG, PNG. Recommended: Square ratio.</small>
                             </div>
 
-                            <div style="text-align: left; margin-bottom: 12px;">
-                                <label style="font-size: 12px; font-weight: 700; color: #64748b; display:block; margin-bottom:4px;">Hometown</label>
-                                <input type="text" name="hometown" class="form-control" 
-                                       style="width:100%; padding:10px; border:1px solid #cbd5e1; border-radius:8px;"
-                                       value="<?= htmlspecialchars($data['hometown']) ?>">
+                            <button type="submit" class="btn-save">Save Profile Changes</button>
+                        </form>
+                    </div>
+
+                    <div id="tab-security" class="tab-content">
+                        <form method="POST">
+                            <input type="hidden" name="action" value="update_password">
+                            
+                            <div class="form-group">
+                                <label>Current Password</label>
+                                <input type="password" name="current_password" class="form-control" placeholder="Enter your current password" required>
                             </div>
 
-                            <div style="text-align: left; margin-bottom: 20px;">
-                                <label style="font-size: 12px; font-weight: 700; color: #64748b; display:block; margin-bottom:4px;">Motto / Bio</label>
-                                <textarea name="motto" rows="3" 
-                                          style="width:100%; padding:10px; border:1px solid #cbd5e1; border-radius:8px; resize:none; font-family:inherit;"
-                                          ><?= htmlspecialchars($data['motto']) ?></textarea>
+                            <div class="form-group">
+                                <label>New Password</label>
+                                <input type="password" name="new_password" class="form-control" placeholder="Minimum 6 characters" required minlength="6">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label>Confirm New Password</label>
+                                <input type="password" name="confirm_password" class="form-control" placeholder="Repeat new password" required>
                             </div>
 
-                            <button type="submit" style="width: 100%; background: #0f172a; color: white; border: none; padding: 12px; border-radius: 8px; font-weight:600; cursor: pointer;">
-                                Save Changes
-                            </button>
+                            <button type="submit" class="btn-save" style="background:#dc2626;">Update Password</button>
                         </form>
                     </div>
 
                 </div>
-
             </div>
         </div>
     </div>
 
     <script>
-        function toggleSidebar() {
-            const sidebar = document.getElementById('sidebar');
-            const overlay = document.getElementById('sidebarOverlay');
-            sidebar.classList.toggle('active');
-            overlay.classList.toggle('active');
-        }
-
-        // Image Preview Function
-        function previewImage(input) {
-            if (input.files && input.files[0]) {
-                var reader = new FileReader();
-                reader.onload = function (e) {
-                    document.getElementById('profilePreview').src = e.target.result;
-                }
-                reader.readAsDataURL(input.files[0]);
-            }
+        function switchTab(tabName, event) {
+            if(event) event.preventDefault();
+            
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            // Reset buttons
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            
+            // Activate selected
+            document.getElementById('tab-' + tabName).classList.add('active');
+            // Highlight button
+            if(event) event.target.classList.add('active');
         }
     </script>
-
 </body>
 </html>

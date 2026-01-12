@@ -151,12 +151,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_segment') {
     $id = (int)$_POST['segment_id'];
     $r_id = (int)$_POST['round_id'];
+    
     // We do NOT check round lock here in PHP because the DB Trigger 'guard_segment_deletion' will do it.
     // However, keeping it for double safety is fine.
     checkRoundLock($conn, $r_id);
 
     // Safety: Check if scores exist before deleting
-    $check = $conn->prepare("SELECT id FROM scores s JOIN criteria c ON s.criteria_id = c.id WHERE c.segment_id = ? LIMIT 1");
+    // FIX: Changed "SELECT id" to "SELECT s.id" to resolve ambiguity
+    $check = $conn->prepare("SELECT s.id FROM scores s JOIN criteria c ON s.criteria_id = c.id WHERE c.segment_id = ? LIMIT 1");
     $check->bind_param("i", $id);
     $check->execute();
 
@@ -168,7 +170,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     // UPDATED: Soft Delete to trigger the DB protection
     $conn->query("UPDATE segments SET is_deleted = 1 WHERE id = $id");
     
-    // Check if the trigger blocked it (if the query failed or returned error, though PHP mysqli might not catch signal exceptions easily without try-catch)
+    // Check if the trigger blocked it
     if ($conn->errno) {
          header("Location: ../public/criteria.php?round_id=$r_id&error=Delete Denied: " . $conn->error);
     } else {

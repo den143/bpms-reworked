@@ -134,7 +134,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             <p><a href='$site_link' style='background:#F59E0B; color:white; padding:10px 20px; text-decoration:none;'>Login Now</a></p>
         ";
 
-        sendCustomEmail($email, $subject, $body);
+        queueEmail($email, $subject, $body);
 
         // SUCCESS: Saved AND Emailed
         header("Location: ../public/judges.php?success=" . urlencode($msg));

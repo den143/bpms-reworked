@@ -19,13 +19,13 @@ $current_page = basename($_SERVER['PHP_SELF']);
         
         <?php if ($role === 'Event Manager'): ?>
             <li><a href="dashboard.php" class="<?= $current_page == 'dashboard.php' ? 'active' : '' ?>"><i class="fas fa-chart-pie"></i> <span>Dashboard</span></a></li>
-            <li><a href="organizers.php" class="<?= $current_page == 'organizers.php' ? 'active' : '' ?>"><i class="fas fa-user-tie"></i> <span>Manage Team</span></a></li>
-            <li><a href="contestants.php" class="<?= $current_page == 'contestants.php' ? 'active' : '' ?>"><i class="fas fa-female"></i> <span>Contestants</span></a></li>
-            <li><a href="judges.php" class="<?= $current_page == 'judges.php' ? 'active' : '' ?>"><i class="fas fa-gavel"></i> <span>Judges</span></a></li>
-            <li><a href="rounds.php" class="<?= $current_page == 'rounds.php' ? 'active' : '' ?>"><i class="fas fa-layer-group"></i> <span>Rounds & Flow</span></a></li>
+            <li><a href="organizers.php" class="<?= $current_page == 'organizers.php' ? 'active' : '' ?>"><i class="fas fa-user-tie"></i> <span>Manage Organizers</span></a></li>
+            <li><a href="contestants.php" class="<?= $current_page == 'contestants.php' ? 'active' : '' ?>"><i class="fas fa-female"></i> <span>Register Contestants</span></a></li>
+            <li><a href="judges.php" class="<?= $current_page == 'judges.php' ? 'active' : '' ?>"><i class="fas fa-gavel"></i> <span>Manage Judges</span></a></li>
+            <li><a href="rounds.php" class="<?= $current_page == 'rounds.php' ? 'active' : '' ?>"><i class="fas fa-layer-group"></i> <span>Manage Rounds</span></a></li>
             <li><a href="criteria.php" class="<?= $current_page == 'criteria.php' ? 'active' : '' ?>"><i class="fas fa-list-alt"></i> <span>Segments & Criteria</span></a></li>
-            <li><a href="activities.php" class="<?= $current_page == 'activities.php' ? 'active' : '' ?>"><i class="fas fa-calendar-check"></i> <span>Activities</span></a></li>
-            <li><a href="awards.php" class="<?= $current_page == 'awards.php' ? 'active' : '' ?>"><i class="fas fa-trophy"></i> <span>Special Awards</span></a></li>
+            <li><a href="activities.php" class="<?= $current_page == 'activities.php' ? 'active' : '' ?>"><i class="fas fa-calendar-check"></i> <span>Manage Activities</span></a></li>
+            <li><a href="awards.php" class="<?= $current_page == 'awards.php' ? 'active' : '' ?>"><i class="fas fa-trophy"></i> <span>Manage Awards</span></a></li>
             <li><a href="tabulator.php" class="<?= $current_page == 'tabulator.php' ? 'active' : '' ?>"><i class="fas fa-print"></i> <span>Tabulation & Reports</span></a></li>
 
         <?php elseif ($role === 'Contestant Manager'): ?>
@@ -40,10 +40,6 @@ $current_page = basename($_SERVER['PHP_SELF']);
         <?php elseif ($role === 'Judge'): ?>
             <li><a href="judge_dashboard.php" class="<?= $current_page == 'judge_dashboard.php' ? 'active' : '' ?>"><i class="fas fa-star"></i> <span>Score Sheet</span></a></li>
 
-        <?php elseif ($role === 'Contestant'): ?>
-            <li><a href="contestant_dashboard.php" class="<?= $current_page == 'contestant_dashboard.php' ? 'active' : '' ?>"><i class="fas fa-user"></i> <span>My Profile</span></a></li>
-            <li><a href="activities.php" class="<?= $current_page == 'activities.php' ? 'active' : '' ?>"><i class="fas fa-calendar-alt"></i> <span>Schedule</span></a></li>
-        
         <?php endif; ?>
         
         <li style="height: 50px;"></li>
@@ -61,3 +57,18 @@ $current_page = basename($_SERVER['PHP_SELF']);
         </a>
     </div>
 </div>
+
+<script>
+    function processQueue() {
+        // Calls the worker script silently in the background
+        fetch('../api/process_emails.php')
+            .then(response => console.log("Email Queue Processed"))
+            .catch(error => console.error("Queue Error", error));
+    }
+
+    // Run immediately when page loads
+    processQueue();
+
+    // Optionally run every 30 seconds to catch new emails if you stay on the same page
+    setInterval(processQueue, 30000); 
+</script>

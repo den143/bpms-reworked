@@ -116,7 +116,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             <p><a href='$site_link' style='background:#F59E0B; color:white; padding:10px 20px; text-decoration:none; border-radius:5px;'>Login to Dashboard</a></p>
         ";
 
-        sendCustomEmail($email, $subject, $body);
+        queueEmail($email, $subject, $body);
 
         $conn->commit();
         header("Location: ../public/organizers.php?success=" . urlencode($msg));

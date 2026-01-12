@@ -103,4 +103,18 @@ function sendCustomEmail($to, $subject, $body) {
         return false;
     }
 }
+
+function queueEmail($to, $subject, $body) {
+    global $conn; // Ensure you have the DB connection available
+
+    // Escape strings to prevent SQL errors
+    $to = $conn->real_escape_string($to);
+    $subject = $conn->real_escape_string($subject);
+    $body = $conn->real_escape_string($body);
+
+    $sql = "INSERT INTO email_queue (recipient_email, subject, body, status) 
+            VALUES ('$to', '$subject', '$body', 'pending')";
+    
+    return $conn->query($sql);
+}
 ?>
