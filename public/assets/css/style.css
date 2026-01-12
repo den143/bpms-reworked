@@ -324,3 +324,393 @@ body {
     }
     .sidebar-overlay.active { display: block; }
 }
+
+/* --- ORGANIZERS & TABLES PAGE STYLES --- */
+
+.page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+.header-actions { display: flex; gap: 10px; }
+
+/* Buttons */
+.btn-add { background-color: #F59E0B; color: white; padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 13px; }
+.btn-add:hover { background-color: #d97706; }
+
+.btn-secondary { background-color: white; border: 1px solid #d1d5db; color: #374151; padding: 10px 20px; border-radius: 6px; text-decoration: none; display: inline-block; font-size: 13px; font-weight: 600; }
+.btn-secondary:hover { background-color: #f3f4f6; }
+
+.btn-search { background-color: #1f2937; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; }
+
+/* Search & Filter Bar */
+.search-container { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 20px; display: flex; gap: 10px; align-items: center; }
+.search-input { padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; flex-grow: 1; font-size: 14px; }
+.filter-select { padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; width: 180px; font-size: 14px; }
+
+/* Tables */
+.data-table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.05); min-width: 600px; }
+.data-table th, .data-table td { padding: 15px; text-align: left; border-bottom: 1px solid #f3f4f6; vertical-align: middle; }
+.data-table th { background-color: #f9fafb; font-weight: 600; color: #6b7280; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+/* Badges */
+.role-badge { padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: bold; display: inline-block; }
+.role-judge { background-color: #e0e7ff; color: #4338ca; } 
+.role-cm { background-color: #fce7f3; color: #db2777; }
+.role-tab { background-color: #d1fae5; color: #059669; }
+
+/* Icon Actions */
+.icon-btn { 
+    width: 32px; height: 32px; border-radius: 6px; border: none; cursor: pointer; 
+    display: inline-flex; align-items: center; justify-content: center; 
+    transition: all 0.2s; color: white; font-size: 13px; margin-right: 4px;
+}
+.btn-edit { background: #3b82f6; color: white; }
+.btn-edit:hover { background: #2563eb; }
+
+.btn-reminder { background: #0ea5e9; color: white; } 
+.btn-reminder:hover { background: #0284c7; }
+
+.btn-reset { background: #f59e0b; color: white; }
+.btn-reset:hover { background: #d97706; }
+
+.btn-archive { background: #f97316; color: white; } 
+.btn-archive:hover { background: #ea580c; }
+
+.btn-restore { background: #10b981; color: white; }
+.btn-restore:hover { background: #059669; }
+
+.btn-delete { background: #ef4444; color: white; }
+.btn-delete:hover { background: #dc2626; }
+
+/* Modal Forms */
+.modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; justify-content: center; align-items: center; z-index: 1000; }
+.modal-content { background: white; padding: 30px; width: 450px; border-radius: 12px; }
+.form-group { margin-bottom: 15px; position: relative; } 
+.form-control { width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; }
+.toggle-password { position: absolute; right: 10px; top: 35px; cursor: pointer; color: #9ca3af; }
+
+/* Helpers */
+button:disabled { opacity: 0.7; cursor: not-allowed; }
+
+/* --- CONTESTANTS PAGE STYLES --- */
+
+/* Tabs Navigation */
+.tabs { display: flex; gap: 15px; margin-bottom: 20px; border-bottom: 2px solid #e5e7eb; padding-bottom: 0; }
+.tab-link { padding: 10px 15px; text-decoration: none; color: #6b7280; font-weight: 600; font-size: 14px; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: color 0.2s; }
+.tab-link.active { border-bottom-color: #F59E0B; color: #F59E0B; }
+
+/* Grid & Cards */
+.contestant-grid { 
+    display: grid; 
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); 
+    gap: 15px; 
+}
+
+.contestant-card { 
+    background: white; 
+    border-radius: 8px; 
+    overflow: hidden; 
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1); 
+    display: flex; 
+    flex-direction: column; 
+    transition: transform 0.2s; 
+}
+.contestant-card:hover { transform: translateY(-2px); box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+
+.card-img { 
+    width: 100%; 
+    height: 140px; 
+    object-fit: cover; 
+    background: #f3f4f6; 
+}
+
+.card-body { padding: 12px; flex-grow: 1; }
+.card-title { 
+    font-size: 15px; font-weight: bold; color: #1f2937; margin-bottom: 2px; 
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; 
+}
+.card-subtitle { 
+    font-size: 11px; color: #F59E0B; margin-bottom: 8px; 
+    font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; 
+}
+
+.stats-row { 
+    display: flex; justify-content: space-between; 
+    font-size: 12px; color: #6b7280; margin-bottom: 4px; 
+    border-bottom: 1px solid #f3f4f6; padding-bottom: 4px; 
+}
+
+/* Card Action Buttons */
+.card-actions { 
+    padding: 8px 12px; 
+    background: #f9fafb; 
+    border-top: 1px solid #f3f4f6; 
+    display: flex; justify-content: center; gap: 5px; 
+}
+
+.btn-view { background: #64748b; color: white; } 
+.btn-view:hover { background: #475569; }
+
+.btn-approve { background: #10b981; color: white; } 
+.btn-approve:hover { background: #059669; }
+
+.btn-reject { background: #ef4444; color: white; } 
+.btn-reject:hover { background: #dc2626; }
+
+/* Form Layouts (Modals) */
+.form-row { display: flex; gap: 10px; }
+.form-row .form-group { flex: 1; }
+
+/* --- JUDGES PAGE & SPINNER STYLES --- */
+
+/* Role Badges */
+.badge-chairman { 
+    background: #dbeafe; color: #1e40af; 
+    padding: 4px 10px; border-radius: 20px; 
+    font-size: 11px; font-weight: bold; 
+    text-transform: uppercase; display: inline-block; 
+}
+
+.badge-judge { 
+    color: #6b7280; font-size: 12px; font-weight: 500; 
+}
+
+/* Loading Overlay (For Form Submission) */
+.loading-overlay {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(255, 255, 255, 0.8);
+    display: none; justify-content: center; align-items: center;
+    z-index: 9999; backdrop-filter: blur(2px);
+}
+
+.spinner {
+    border: 5px solid #f3f3f3;
+    border-top: 5px solid #F59E0B; /* Orange Theme */
+    border-radius: 50%; width: 50px; height: 50px;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin { 
+    0% { transform: rotate(0deg); } 
+    100% { transform: rotate(360deg); } 
+}
+
+/* --- ROUNDS PAGE STYLES --- */
+
+/* Round Card Layout */
+.round-card { 
+    background: white; 
+    padding: 20px; 
+    border-radius: 8px; 
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05); 
+    margin-bottom: 15px; 
+    display: flex; 
+    justify-content: space-between; 
+    align-items: center; 
+    border-left: 5px solid transparent; 
+    transition: transform 0.2s; 
+}
+.round-card:hover { transform: translateX(5px); }
+
+/* Round Status Colors */
+.round-card.active { border-left-color: #059669; background: #ecfdf5; }
+.round-card.pending { border-left-color: #d1d5db; }
+.round-card.completed { border-left-color: #3b82f6; background: #eff6ff; }
+
+.round-info h3 { margin: 0 0 5px 0; font-size: 18px; color: #111827; }
+.round-meta { font-size: 13px; color: #6b7280; display: flex; gap: 15px; }
+.round-meta span { display: flex; align-items: center; gap: 5px; }
+
+/* Status Badges */
+.status-badge { 
+    padding: 4px 10px; 
+    border-radius: 12px; 
+    font-size: 11px; 
+    font-weight: bold; 
+    text-transform: uppercase; 
+    margin-left: 8px;
+}
+.status-active { 
+    background: #d1fae5; color: #065f46; border: 1px solid #34d399; 
+    animation: pulse 2s infinite; 
+}
+.status-pending { background: #f3f4f6; color: #6b7280; }
+.status-completed { background: #dbeafe; color: #1e40af; }
+
+@keyframes pulse { 
+    0% { box-shadow: 0 0 0 0 rgba(5, 150, 105, 0.4); } 
+    70% { box-shadow: 0 0 0 10px rgba(5, 150, 105, 0); } 
+    100% { box-shadow: 0 0 0 0 rgba(5, 150, 105, 0); } 
+}
+
+/* Round Action Buttons */
+.actions { display: flex; gap: 10px; align-items: center; }
+
+/* Icon Buttons (Edit/Delete) */
+.btn-icon { 
+    background: white; border: 1px solid #d1d5db; 
+    width: 32px; height: 32px; border-radius: 4px; 
+    cursor: pointer; color: #4b5563; 
+    display: flex; justify-content: center; align-items: center; 
+    text-decoration: none; transition: 0.2s; 
+}
+.btn-icon:hover { background: #f3f4f6; color: #111827; }
+.btn-icon:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Control Buttons (Start/Stop/Lock) */
+.btn-control { 
+    border: none; padding: 8px 16px; border-radius: 6px; 
+    font-size: 12px; cursor: pointer; font-weight: bold; 
+    display: flex; align-items: center; gap: 6px; transition: 0.2s; 
+}
+.btn-start { background: #2563eb; color: white; }
+.btn-start:hover { background: #1d4ed8; }
+
+.btn-lock { background: #059669; color: white; }
+.btn-lock:hover { background: #047857; }
+
+.btn-stop { background: #fee2e2; color: #dc2626; border: 1px solid #fecaca; }
+.btn-stop:hover { background: #fecaca; }
+
+/* Info Alert Box */
+.info-alert { 
+    background:#eff6ff; padding:10px; 
+    border-radius:6px; font-size:12px; color:#1e40af; 
+    margin-bottom:15px; border-left: 3px solid #3b82f6; 
+}
+
+/* Mobile Responsiveness for Round Card */
+@media (max-width: 768px) {
+    .round-card { 
+        flex-direction: column; /* Stack vertically on mobile */
+        align-items: flex-start;
+        gap: 15px;
+    }
+    .actions { 
+        width: 100%; 
+        justify-content: flex-start; /* Align buttons left */
+        flex-wrap: wrap; /* Allow buttons to wrap if needed */
+    }
+    .btn-control { flex: 1; justify-content: center; } /* Make buttons big tap targets */
+}
+
+/* --- CRITERIA PAGE STYLES --- */
+
+/* Tabs Wrapper (Scrollable on Mobile) */
+.tabs-wrapper { 
+    display: flex; gap: 5px; 
+    border-bottom: 2px solid #e5e7eb; margin-bottom: 25px; 
+    overflow-x: auto; /* Enable horizontal scrolling */
+    white-space: nowrap; /* Prevent tabs from wrapping */
+    padding-bottom: 2px; /* Fix scrollbar overlap */
+}
+
+/* Hide Scrollbar for Cleaner Look */
+.tabs-wrapper::-webkit-scrollbar { height: 4px; }
+.tabs-wrapper::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 4px; }
+
+.tab-item { 
+    padding: 12px 25px; background: #f9fafb; 
+    border: 1px solid #e5e7eb; border-bottom: none; 
+    border-radius: 8px 8px 0 0; cursor: pointer; 
+    font-weight: 600; color: #6b7280; text-decoration: none; 
+}
+.tab-item.active { 
+    background: white; color: #F59E0B; 
+    border-color: #e5e7eb; border-bottom: 2px solid white; 
+    margin-bottom: -2px; 
+}
+
+/* Status Bar (Total Percentage) */
+.status-bar { 
+    background: white; padding: 15px 20px; 
+    border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); 
+    margin-bottom: 20px; display: flex; justify-content: space-between; 
+    align-items: center; border-left: 5px solid #d1d5db; 
+}
+.status-bar.valid { border-left-color: #059669; background: #ecfdf5; }
+.status-bar.invalid { border-left-color: #dc2626; background: #fef2f2; }
+
+/* Segment Card */
+.segment-card { 
+    background: white; border-radius: 8px; 
+    box-shadow: 0 4px 6px rgba(0,0,0,0.05); 
+    margin-bottom: 30px; overflow: hidden; 
+    border: 1px solid #e5e7eb; 
+}
+
+.segment-header { 
+    background: #fff; padding: 20px; 
+    border-bottom: 1px solid #f3f4f6; 
+    display: flex; justify-content: space-between; align-items: flex-start; 
+}
+
+.segment-title h3 { margin: 0; font-size: 18px; color: #111827; display:flex; align-items:center; }
+.weight-badge { background: #1f2937; color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; margin-left: 10px; }
+.segment-desc { color: #6b7280; font-size: 14px; margin-top: 5px; font-style: italic; display: block; }
+
+/* Criteria Table */
+.criteria-table { width: 100%; border-collapse: collapse; }
+.criteria-table th { background: #f9fafb; padding: 12px 20px; text-align: left; font-size: 12px; color: #6b7280; text-transform: uppercase; }
+.criteria-table td { padding: 15px 20px; border-bottom: 1px solid #f3f4f6; color: #374151; font-size: 14px; vertical-align:middle; }
+.crit-desc { display: block; font-size: 13px; color: #9ca3af; margin-top: 4px; font-style: italic; }
+
+.actions { display: flex; gap: 5px; }
+
+/* Small Button for Adding Criteria */
+.btn-sm-primary { background: #3b82f6; color: white; border:none; padding:5px 10px; border-radius:4px; font-size:12px; cursor:pointer; }
+.btn-sm-primary:hover { background: #2563eb; }
+
+/* Mobile Optimizations for Criteria */
+@media (max-width: 768px) {
+    .segment-header { flex-direction: column; gap: 15px; }
+    .actions { width: 100%; justify-content: flex-start; }
+    
+    /* Make Table Horizontal Scroll on small screens */
+    .segment-card { overflow-x: auto; }
+    .criteria-table { min-width: 500px; }
+}
+
+/* --- AWARDS PAGE STYLES --- */
+
+/* Award Card */
+.award-card { 
+    background: white; border-radius: 8px; 
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 15px; 
+    border: 1px solid #e5e7eb; padding: 20px; 
+    display: flex; justify-content: space-between; align-items: center; 
+}
+
+.award-info h3 { 
+    margin: 0 0 5px 0; font-size: 16px; 
+    color: #111827; display: flex; align-items: center; gap: 10px; 
+}
+
+/* Badges for Award Type */
+.badge { 
+    padding: 2px 8px; border-radius: 4px; 
+    font-size: 11px; text-transform: uppercase; font-weight: bold; 
+}
+.badge-major { background: #fef3c7; color: #b45309; }
+.badge-minor { background: #e0f2fe; color: #0369a1; }
+
+/* Tags for Selection Method */
+.smart-tag { 
+    font-size: 12px; color: #059669; 
+    display: flex; align-items: center; gap: 5px; margin-top: 5px; 
+}
+.manual-tag { 
+    font-size: 12px; color: #6b7280; 
+    display: flex; align-items: center; gap: 5px; margin-top: 5px; 
+}
+.audience-tag { 
+    font-size: 12px; color: #7c3aed; 
+    display: flex; align-items: center; gap: 5px; margin-top: 5px; 
+}
+
+/* Mobile Award Card */
+@media (max-width: 768px) {
+    .award-card { 
+        flex-direction: column; 
+        align-items: flex-start; gap: 15px; 
+    }
+    .award-info h3 { flex-wrap: wrap; }
+    .actions { width: 100%; justify-content: flex-start; }
+}

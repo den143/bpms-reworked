@@ -12,7 +12,6 @@ $search = trim($_GET['search'] ?? '');
 $role_filter = $_GET['role'] ?? '';
 
 // 1. Get Active Event
-// UPDATED: Column 'title' instead of 'name'
 $evt_sql = "SELECT id, title FROM events WHERE manager_id = ? AND status = 'Active' LIMIT 1";
 $evt_stmt = $conn->prepare($evt_sql);
 $evt_stmt->bind_param("i", $manager_id);
@@ -25,7 +24,6 @@ if ($active_event) {
     $event_id = $active_event['id'];
 
     // 2. Build Query
-    // UPDATED: Table 'event_teams' (aliased as et)
     $sql = "SELECT et.id as link_id, u.id as user_id, u.name, u.email, u.phone, et.role 
             FROM event_teams et 
             JOIN users u ON et.user_id = u.id 
@@ -46,7 +44,7 @@ if ($active_event) {
     }
 
     if (!empty($role_filter)) {
-        $sql .= " AND et.role = ?"; // Use role from team table
+        $sql .= " AND et.role = ?"; 
         $types .= "s";
         $params[] = $role_filter;
     }
@@ -64,80 +62,26 @@ if ($active_event) {
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Manage Organizers - BPMS</title>
-    <link rel="stylesheet" href="./assets/css/style.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-        .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-        .header-actions { display: flex; gap: 10px; }
-        .btn-add { background-color: #F59E0B; color: white; padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 13px; }
-        .btn-add:hover { background-color: #d97706; }
-        .btn-secondary { background-color: white; border: 1px solid #d1d5db; color: #374151; padding: 10px 20px; border-radius: 6px; text-decoration: none; display: inline-block; font-size: 13px; font-weight: 600; }
-        .btn-secondary:hover { background-color: #f3f4f6; }
-
-        .search-container { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 20px; display: flex; gap: 10px; align-items: center; }
-        .search-input { padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; flex-grow: 1; font-size: 14px; }
-        .filter-select { padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; width: 180px; font-size: 14px; }
-        .btn-search { background-color: #1f2937; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; }
-
-        .data-table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-        .data-table th, .data-table td { padding: 15px; text-align: left; border-bottom: 1px solid #f3f4f6; vertical-align: middle; }
-        .data-table th { background-color: #f9fafb; font-weight: 600; color: #6b7280; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
-        
-        .role-badge { padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: bold; display: inline-block; }
-        .role-judge { background-color: #e0e7ff; color: #4338ca; } 
-        .role-cm { background-color: #fce7f3; color: #db2777; }
-        .role-tab { background-color: #d1fae5; color: #059669; }
-
-        /* Icon Buttons */
-        .icon-btn { 
-            width: 32px; height: 32px; border-radius: 6px; border: none; cursor: pointer; 
-            display: inline-flex; align-items: center; justify-content: center; 
-            transition: all 0.2s; color: white; font-size: 13px; margin-right: 4px;
-        }
-        .btn-edit { background: #3b82f6; color: white; }
-        .btn-edit:hover { background: #2563eb; }
-        
-        .btn-reminder { background: #0ea5e9; color: white; } 
-        .btn-reminder:hover { background: #0284c7; }
-        
-        .btn-reset { background: #f59e0b; color: white; }
-        .btn-reset:hover { background: #d97706; }
-        
-        /* Orange for Archive */
-        .btn-archive { background: #f97316; color: white; } 
-        .btn-archive:hover { background: #ea580c; }
-        
-        /* Green for Restore */
-        .btn-restore { background: #10b981; color: white; }
-        .btn-restore:hover { background: #059669; }
-
-        /* Red for Permanent Delete */
-        .btn-delete { background: #ef4444; color: white; }
-        .btn-delete:hover { background: #dc2626; }
-
-        /* Modal */
-        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; justify-content: center; align-items: center; z-index: 1000; }
-        .modal-content { background: white; padding: 30px; width: 450px; border-radius: 12px; }
-        .form-group { margin-bottom: 15px; position: relative; } 
-        .form-control { width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; }
-        .toggle-password { position: absolute; right: 10px; top: 35px; cursor: pointer; color: #9ca3af; }
-        
-        /* DISABLED STATE FOR BUTTONS */
-        button:disabled {
-            opacity: 0.7;
-            cursor: not-allowed;
-        }
-    </style>
+    <link rel="stylesheet" href="./assets/css/style.css?v=3">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"> 
 </head>
 <body>
+
+    <div id="sidebarOverlay" class="sidebar-overlay" onclick="toggleSidebar()"></div>
 
     <div class="main-wrapper">
         <?php require_once __DIR__ . '/../app/views/partials/sidebar.php'; ?>
 
         <div class="content-area">
             <div class="navbar">
-                <div class="navbar-title">Manage Organizers</div>
+                <div style="display:flex; align-items:center;">
+                    <button class="menu-toggle" onclick="toggleSidebar()">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                    <div class="navbar-title">Manage Organizers</div>
+                </div>
             </div>
 
             <div class="container">
@@ -179,82 +123,84 @@ if ($active_event) {
                         <button type="submit" class="btn-search">Filter</button>
                     </form>
 
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Name</th>
-                                <th>Role</th>
-                                <th>Contact Info</th>
-                                <th style="text-align:right;">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php if (empty($organizers)): ?>
-                                <tr><td colspan="4" style="text-align:center; padding: 30px; color:#9ca3af;">No organizers found matching your criteria.</td></tr>
-                            <?php else: ?>
-                                <?php foreach ($organizers as $org): ?>
-                                    <tr>
-                                        <td>
-                                            <div style="font-weight: 600; color:#1f2937;"><?= htmlspecialchars($org['name']) ?></div>
-                                        </td>
-                                        <td>
-                                            <?php 
-                                                $cls = 'role-tab';
-                                                if ($org['role'] === 'Judge Coordinator') $cls = 'role-judge';
-                                                if ($org['role'] === 'Contestant Manager') $cls = 'role-cm';
-                                            ?>
-                                            <span class="role-badge <?= $cls ?>"><?= htmlspecialchars($org['role']) ?></span>
-                                        </td>
-                                        <td style="font-size:13px; color:#4b5563;">
-                                            <div><i class="fas fa-envelope" style="color:#9ca3af; width:15px;"></i> <?= htmlspecialchars($org['email']) ?></div>
-                                            <?php if($org['phone']): ?>
-                                            <div style="margin-top:2px;"><i class="fas fa-phone" style="color:#9ca3af; width:15px;"></i> <?= htmlspecialchars($org['phone']) ?></div>
-                                            <?php endif; ?>
-                                        </td>
-                                        <td style="text-align:right;">
-                                            <div style="display:inline-flex;">
-                                                <?php if ($view === 'active'): ?>
-                                                    
-                                                    <button class="icon-btn btn-edit" onclick='openEditModal(<?= json_encode($org) ?>)' title="Edit Details">
-                                                        <i class="fas fa-pen"></i>
-                                                    </button>
-                                                    
-                                                    <form action="../api/resend_email.php" method="POST" style="margin:0;" onsubmit="return confirm('Send a reminder email? (Password will NOT be changed)');">
-                                                        <input type="hidden" name="user_id" value="<?= $org['user_id'] ?>">
-                                                        <input type="hidden" name="action_type" value="reminder">
-                                                        <button type="submit" class="icon-btn btn-reminder" title="Send Login Reminder">
-                                                            <i class="fas fa-paper-plane"></i>
-                                                        </button>
-                                                    </form>
-
-                                                    <form action="../api/resend_email.php" method="POST" style="margin:0;" onsubmit="return confirm('WARNING: This will RESET the password and email the new one. Proceed?');">
-                                                        <input type="hidden" name="user_id" value="<?= $org['user_id'] ?>">
-                                                        <input type="hidden" name="action_type" value="reset">
-                                                        <button type="submit" class="icon-btn btn-reset" title="Reset Password & Email">
-                                                            <i class="fas fa-key"></i>
-                                                        </button>
-                                                    </form>
-                                                    
-                                                    <a href="../api/organizer.php?action=remove&id=<?= $org['link_id'] ?>" class="icon-btn btn-archive" onclick="return confirm('Archive this organizer?');" title="Archive">
-                                                        <i class="fas fa-archive"></i>
-                                                    </a>
-
-                                                <?php else: ?>
-                                                    <a href="../api/organizer.php?action=restore&id=<?= $org['link_id'] ?>" class="icon-btn btn-restore" onclick="return confirm('Restore this organizer?');" title="Restore">
-                                                        <i class="fas fa-undo"></i>
-                                                    </a>
-
-                                                    <a href="../api/organizer.php?action=delete&id=<?= $org['link_id'] ?>" class="icon-btn btn-delete" onclick="return confirm('PERMANENTLY REMOVE?\n\nThey will disappear from this list, but their account credentials will remain in the database.');" title="Remove Completely">
-                                                        <i class="fas fa-trash"></i>
-                                                    </a>
+                    <div class="table-card" style="overflow-x:auto;">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Role</th>
+                                    <th>Contact Info</th>
+                                    <th style="text-align:right;">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php if (empty($organizers)): ?>
+                                    <tr><td colspan="4" style="text-align:center; padding: 30px; color:#9ca3af;">No organizers found matching your criteria.</td></tr>
+                                <?php else: ?>
+                                    <?php foreach ($organizers as $org): ?>
+                                        <tr>
+                                            <td>
+                                                <div style="font-weight: 600; color:#1f2937;"><?= htmlspecialchars($org['name']) ?></div>
+                                            </td>
+                                            <td>
+                                                <?php 
+                                                    $cls = 'role-tab';
+                                                    if ($org['role'] === 'Judge Coordinator') $cls = 'role-judge';
+                                                    if ($org['role'] === 'Contestant Manager') $cls = 'role-cm';
+                                                ?>
+                                                <span class="role-badge <?= $cls ?>"><?= htmlspecialchars($org['role']) ?></span>
+                                            </td>
+                                            <td style="font-size:13px; color:#4b5563;">
+                                                <div><i class="fas fa-envelope" style="color:#9ca3af; width:15px;"></i> <?= htmlspecialchars($org['email']) ?></div>
+                                                <?php if($org['phone']): ?>
+                                                <div style="margin-top:2px;"><i class="fas fa-phone" style="color:#9ca3af; width:15px;"></i> <?= htmlspecialchars($org['phone']) ?></div>
                                                 <?php endif; ?>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                <?php endforeach; ?>
-                            <?php endif; ?>
-                        </tbody>
-                    </table>
+                                            </td>
+                                            <td style="text-align:right;">
+                                                <div style="display:inline-flex;">
+                                                    <?php if ($view === 'active'): ?>
+                                                        
+                                                        <button class="icon-btn btn-edit" onclick='openEditModal(<?= json_encode($org) ?>)' title="Edit Details">
+                                                            <i class="fas fa-pen"></i>
+                                                        </button>
+                                                        
+                                                        <form action="../api/resend_email.php" method="POST" style="margin:0;" onsubmit="return confirm('Send a reminder email? (Password will NOT be changed)');">
+                                                            <input type="hidden" name="user_id" value="<?= $org['user_id'] ?>">
+                                                            <input type="hidden" name="action_type" value="reminder">
+                                                            <button type="submit" class="icon-btn btn-reminder" title="Send Login Reminder">
+                                                                <i class="fas fa-paper-plane"></i>
+                                                            </button>
+                                                        </form>
+
+                                                        <form action="../api/resend_email.php" method="POST" style="margin:0;" onsubmit="return confirm('WARNING: This will RESET the password and email the new one. Proceed?');">
+                                                            <input type="hidden" name="user_id" value="<?= $org['user_id'] ?>">
+                                                            <input type="hidden" name="action_type" value="reset">
+                                                            <button type="submit" class="icon-btn btn-reset" title="Reset Password & Email">
+                                                                <i class="fas fa-key"></i>
+                                                            </button>
+                                                        </form>
+                                                        
+                                                        <a href="../api/organizer.php?action=remove&id=<?= $org['link_id'] ?>" class="icon-btn btn-archive" onclick="return confirm('Archive this organizer?');" title="Archive">
+                                                            <i class="fas fa-archive"></i>
+                                                        </a>
+
+                                                    <?php else: ?>
+                                                        <a href="../api/organizer.php?action=restore&id=<?= $org['link_id'] ?>" class="icon-btn btn-restore" onclick="return confirm('Restore this organizer?');" title="Restore">
+                                                            <i class="fas fa-undo"></i>
+                                                        </a>
+
+                                                        <a href="../api/organizer.php?action=delete&id=<?= $org['link_id'] ?>" class="icon-btn btn-delete" onclick="return confirm('PERMANENTLY REMOVE?\n\nThey will disappear from this list, but their account credentials will remain in the database.');" title="Remove Completely">
+                                                            <i class="fas fa-trash"></i>
+                                                        </a>
+                                                    <?php endif; ?>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
 
                 <?php endif; ?>
             </div>
@@ -340,6 +286,20 @@ if ($active_event) {
     </div>
 
     <script>
+        // MOBILE SIDEBAR TOGGLE
+        function toggleSidebar() {
+            const sidebar = document.querySelector('.sidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+            
+            if (sidebar.style.left === '0px') {
+                sidebar.style.left = '-280px'; // Close
+                overlay.style.display = 'none';
+            } else {
+                sidebar.style.left = '0px'; // Open
+                overlay.style.display = 'block';
+            }
+        }
+
         function openModal(id) { document.getElementById(id).style.display = 'flex'; }
         function openEditModal(user) {
             document.getElementById('edit_id').value = user.user_id;

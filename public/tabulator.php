@@ -8,7 +8,6 @@ $user_id = $_SESSION['user_id'];
 $user_role = $_SESSION['role'];
 
 // 2. GET ACTIVE EVENT
-// UPDATED: Column 'title' instead of 'name'
 $evt_sql = "SELECT id, title FROM events WHERE status = 'Active' LIMIT 1";
 $event = $conn->query($evt_sql)->fetch_assoc();
 
@@ -22,7 +21,6 @@ if (!$event) {
 $event_id = $event['id'];
 
 // 3. GET ROUNDS
-// UPDATED: Added is_deleted check
 $rnd_sql = "SELECT id, title, status FROM rounds WHERE event_id = $event_id AND is_deleted = 0 ORDER BY ordering";
 $rounds = $conn->query($rnd_sql)->fetch_all(MYSQLI_ASSOC);
 
@@ -36,7 +34,7 @@ $current_round_id = isset($_GET['round_id']) ? (int)$_GET['round_id'] : ($rounds
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tabulation - <?= htmlspecialchars($event['title']) ?></title>
-    <link rel="stylesheet" href="assets/css/style.css">
+    <link rel="stylesheet" href="assets/css/style.css?v=10">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         :root { --gold: #F59E0B; --dark: #111827; --success: #059669; }
@@ -120,7 +118,7 @@ $current_round_id = isset($_GET['round_id']) ? (int)$_GET['round_id'] : ($rounds
             body { font-family: 'Times New Roman', serif; background: white; color: black; }
 
             /* 1. HIDE ALL UI CHROME */
-            .sidebar, .navbar, .tab-nav, .stats-grid, .control-toolbar, .action-btn { display: none !important; }
+            .sidebar, .navbar, .tab-nav, .stats-grid, .control-toolbar, .action-btn, #sidebarOverlay, .menu-toggle { display: none !important; }
             
             /* 2. RESET CONTAINERS */
             .main-wrapper, .content-area, .container { 
@@ -163,6 +161,8 @@ $current_round_id = isset($_GET['round_id']) ? (int)$_GET['round_id'] : ($rounds
 </head>
 <body>
 
+<div id="sidebarOverlay" class="sidebar-overlay" onclick="toggleSidebar()"></div>
+
 <div class="main-wrapper">
     
     <?php if ($user_role === 'Event Manager'): ?>
@@ -192,8 +192,14 @@ $current_round_id = isset($_GET['round_id']) ? (int)$_GET['round_id'] : ($rounds
     <?php endif; ?>
 
     <div class="content-area">
-        <div class="navbar" style="background:var(--dark); color:white; padding:15px 25px; display:flex; justify-content:space-between; align-items:center;">
-            <div style="font-weight:800; font-size:1.2rem;">Official Tabulation</div>
+        <div class="navbar" style="background:var(--dark); color:white; padding:15px 25px;">
+            <div style="display:flex; align-items:center; gap: 15px;">
+                <button class="menu-toggle" onclick="toggleSidebar()" style="color: white;">
+                    <i class="fas fa-bars"></i>
+                </button>
+                <div class="navbar-title" style="color:white;">Official Tabulation</div>
+            </div>
+
             <div id="liveIndicator" style="font-size:12px; color:#34d399; font-weight:bold; display:flex; align-items:center; gap:5px;">
                 <i class="fas fa-circle fa-beat"></i> LIVE SYSTEM
             </div>
@@ -277,16 +283,27 @@ $current_round_id = isset($_GET['round_id']) ? (int)$_GET['round_id'] : ($rounds
 </div>
 
 <script>
+    // MOBILE SIDEBAR TOGGLE
+    function toggleSidebar() {
+        const sidebar = document.querySelector('.sidebar');
+        const overlay = document.getElementById('sidebarOverlay');
+        
+        if (sidebar.style.left === '0px') {
+            sidebar.style.left = '-280px'; // Close
+            overlay.style.display = 'none';
+        } else {
+            sidebar.style.left = '0px'; // Open
+            overlay.style.display = 'block';
+        }
+    }
+
     const ROUND_ID = <?= $current_round_id ?>;
     const EVENT_ID = <?= $event_id ?>;
     
-    // FETCH (GET) uses tally.php (Data Feeder)
     const TALLY_API_URL = "../api/tally.php";
-    
-    // ACTIONS (POST) uses rounds.php (Traffic Controller)
     const ACTION_API_URL = "../api/rounds.php"; 
-    
     const AWARDS_API = "../api/awards_tally.php";
+    
     let currentData = null;
     let allContestants = []; 
 
@@ -300,7 +317,6 @@ $current_round_id = isset($_GET['round_id']) ? (int)$_GET['round_id'] : ($rounds
         document.getElementById('btnAud').classList.toggle('active', view === 'audit');
         document.getElementById('btnAwd').classList.toggle('active', view === 'awards');
 
-        // DYNAMIC PRINT BUTTON TEXT
         const printBtn = document.getElementById('btnPrint');
         if (view === 'summary') {
             printBtn.innerHTML = '<i class="fas fa-print"></i> Print Leaderboard';
@@ -329,23 +345,19 @@ $current_round_id = isset($_GET['round_id']) ? (int)$_GET['round_id'] : ($rounds
                 
                 document.getElementById('roundStatusText').innerText = currentData.round_status;
                 
-                // BUTTON STATE LOGIC
                 const btn = document.getElementById('btnLock');
                 if (currentData.round_status === 'Completed') {
-                    // If completed, allow Re-Open (handled via rounds.php if implemented) or Update
-                    // For now, we show LOCKED state
                     btn.disabled = true;
                     btn.innerHTML = '<i class="fas fa-check-circle"></i> LOCKED';
                     btn.style.background = '#4b5563'; 
                 } else {
-                    // Check if all judges submitted
                     const totalJ = currentData.judges.length;
                     const subJ = (currentData.submitted_judges || []).length;
                     
                     if(totalJ > 0 && subJ === totalJ) {
                         btn.disabled = false;
                         btn.innerHTML = '<i class="fas fa-lock"></i> LOCK ROUND';
-                        btn.style.background = '#059669'; // Green means ready
+                        btn.style.background = '#059669'; 
                     } else {
                         btn.disabled = true;
                         btn.innerHTML = `Waiting (${subJ}/${totalJ})`;
@@ -381,9 +393,7 @@ $current_round_id = isset($_GET['round_id']) ? (int)$_GET['round_id'] : ($rounds
             const win = item.winner;
             let winnerHTML = '';
 
-            // LOGIC FOR DISPLAYING WINNER
             if (aw.source_type === 'Manual') {
-                // Dropdown for Tabulator to pick
                 let options = `<option value="">-- Select Winner --</option>`;
                 allContestants.forEach(c => {
                     const sel = (win && c.name === win.name) ? 'selected' : '';
@@ -396,7 +406,6 @@ $current_round_id = isset($_GET['round_id']) ? (int)$_GET['round_id'] : ($rounds
                 `;
 
             } else {
-                // Auto-Calculated
                 if (win) {
                     winnerHTML = `<div class="winner-auto"><i class="fas fa-trophy" style="font-size:1.2em; color:gold;"></i> <span>${win.name}</span></div>`;
                     if(win.total_score) winnerHTML += `<div style="font-size:11px; margin-top:4px;">Score: ${parseFloat(win.total_score).toFixed(2)}</div>`;
@@ -583,14 +592,13 @@ $current_round_id = isset($_GET['round_id']) ? (int)$_GET['round_id'] : ($rounds
         containerPrint.innerHTML = printHTML;
     }
 
-    // --- LOCK ROUND LOGIC (POINTING TO ROUNDS.PHP) ---
+    // --- LOCK ROUND LOGIC ---
     async function lockRound() {
         if (!confirm("CONFIRM FINALIZATION?\n\nThis will lock the scores and promote winners to the next round.")) return;
         const btn = document.getElementById('btnLock');
         btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Processing...';
         btn.disabled = true;
 
-        // Use FormData for compatibility with api/rounds.php
         const formData = new FormData();
         formData.append('action', 'lock');
         formData.append('round_id', ROUND_ID);
@@ -620,5 +628,6 @@ $current_round_id = isset($_GET['round_id']) ? (int)$_GET['round_id'] : ($rounds
     setInterval(fetchTally, 5000);
     fetchTally();
 </script>
+
 </body>
 </html>

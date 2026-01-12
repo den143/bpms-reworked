@@ -20,10 +20,8 @@ if ($view === 'pending') {
     $page_title = "Official Candidates";
 }
 
-// Model fetches data (filtering out is_deleted=1)
 $contestants = Contestant::getAllByManager($my_id, $status_filter, $search);
 
-// UPDATED: Column 'title' instead of 'name'
 $evt_stmt = $conn->prepare("SELECT id, title FROM events WHERE manager_id = ? AND status = 'Active'");
 $evt_stmt->bind_param("i", $my_id);
 $evt_stmt->execute();
@@ -34,78 +32,26 @@ $my_events = $evt_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Manage Contestants - BPMS</title>
-    <link rel="stylesheet" href="./assets/css/style.css">
+    <link rel="stylesheet" href="./assets/css/style.css?v=4">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-        .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-        .header-actions { display: flex; gap: 10px; }
-        
-        .btn-add { background-color: #F59E0B; color: white; padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 13px; text-decoration: none; display: flex; align-items: center; gap: 5px; }
-        .btn-secondary { background-color: white; border: 1px solid #d1d5db; color: #374151; padding: 8px 16px; border-radius: 6px; text-decoration: none; font-size: 13px; font-weight: 600; transition: background 0.2s; }
-        .btn-secondary:hover { background-color: #f3f4f6; }
-
-        .tabs { display: flex; gap: 15px; margin-bottom: 20px; border-bottom: 2px solid #e5e7eb; padding-bottom: 0; }
-        .tab-link { padding: 10px 15px; text-decoration: none; color: #6b7280; font-weight: 600; font-size: 14px; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: color 0.2s; }
-        .tab-link.active { border-bottom-color: #F59E0B; color: #F59E0B; }
-
-        .search-container { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; display: flex; gap: 10px; align-items: center; }
-        .search-input { padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; flex-grow: 1; font-size: 14px; }
-        .btn-search { background-color: #1f2937; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; }
-        .btn-reset { color: #6b7280; text-decoration: none; font-size: 14px; padding: 0 10px; }
-
-        .contestant-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 15px; }
-        .contestant-card { background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; flex-direction: column; transition: transform 0.2s; }
-        .contestant-card:hover { transform: translateY(-2px); box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
-        .card-img { width: 100%; height: 140px; object-fit: cover; background: #f3f4f6; }
-        .card-body { padding: 12px; flex-grow: 1; }
-        .card-title { font-size: 15px; font-weight: bold; color: #1f2937; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .card-subtitle { font-size: 11px; color: #F59E0B; margin-bottom: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
-        .stats-row { display: flex; justify-content: space-between; font-size: 12px; color: #6b7280; margin-bottom: 4px; border-bottom: 1px solid #f3f4f6; padding-bottom: 4px; }
-        
-        .card-actions { padding: 8px 12px; background: #f9fafb; border-top: 1px solid #f3f4f6; display: flex; justify-content: center; gap: 5px; }
-        
-        /* Icon Buttons Styles */
-        .icon-btn { width: 32px; height: 32px; border-radius: 6px; border: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: all 0.2s; color: white; font-size: 13px; text-decoration: none; }
-        
-        .btn-view { background: #64748b; } /* Grey for View */
-        .btn-approve { background: #10b981; } /* Green */
-        .btn-reject { background: #ef4444; } /* Red */
-        
-        .btn-edit { background: #3b82f6; }
-        .btn-edit:hover { background: #2563eb; }
-        
-        .btn-reminder { background: #0ea5e9; }
-        .btn-reminder:hover { background: #0284c7; }
-        
-        .btn-reset { background: #f59e0b; }
-        .btn-reset:hover { background: #d97706; }
-        
-        .btn-archive { background: #f97316; } /* Archive/Remove */
-        .btn-archive:hover { background: #ea580c; }
-        
-        .btn-restore { background: #10b981; }
-        .btn-delete { background: #ef4444; } /* Soft Delete */
-
-        /* Modal Styles */
-        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; justify-content: center; align-items: center; z-index: 1000; }
-        .modal-content { background: white; padding: 25px; width: 450px; border-radius: 12px; max-height: 90vh; overflow-y: auto; }
-        .form-group { margin-bottom: 12px; position: relative; }
-        .form-group label { display: block; margin-bottom: 4px; font-weight: 500; font-size: 13px; }
-        .form-control { width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 14px; }
-        .form-row { display: flex; gap: 10px; }
-        .form-row .form-group { flex: 1; }
-        .toggle-password { position: absolute; right: 10px; top: 30px; cursor: pointer; color: #9ca3af; }
-    </style>
 </head>
 <body>
+
+    <div id="sidebarOverlay" class="sidebar-overlay" onclick="toggleSidebar()"></div>
 
     <div class="main-wrapper">
         <?php require_once __DIR__ . '/../app/views/partials/sidebar.php'; ?>
 
         <div class="content-area">
             <div class="navbar">
-                <div class="navbar-title">Register Contestant</div>
+                <div style="display:flex; align-items:center; gap: 15px;">
+                    <button class="menu-toggle" onclick="toggleSidebar()">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                    <div class="navbar-title">Register Contestant</div>
+                </div>
             </div>
 
             <div class="container">
@@ -166,9 +112,6 @@ $my_events = $evt_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
                                     <div class="stats-row">
                                         <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"><?= htmlspecialchars($c['event_name']) ?></span>
                                     </div>
-
-                                    <?php if (!empty($c['motto'])): ?>
-                                        <?php endif; ?>
                                 </div>
 
                                 <div class="card-actions">
@@ -269,6 +212,20 @@ $my_events = $evt_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     </div>
 
     <script>
+        // MOBILE SIDEBAR TOGGLE
+        function toggleSidebar() {
+            const sidebar = document.querySelector('.sidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+            
+            if (sidebar.style.left === '0px') {
+                sidebar.style.left = '-280px'; // Close
+                overlay.style.display = 'none';
+            } else {
+                sidebar.style.left = '0px'; // Open
+                overlay.style.display = 'block';
+            }
+        }
+
         function openModal(id) { document.getElementById(id).style.display = 'flex'; }
         function closeModal(id) { document.getElementById(id).style.display = 'none'; }
         
@@ -282,7 +239,6 @@ $my_events = $evt_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
             document.getElementById('edit_hometown').value = c.hometown;
             document.getElementById('edit_motto').value = c.motto;
             
-            // PARSE VITAL STATS (Format: "34.0-24.0-34.0")
             if (c.vital_stats) {
                 const parts = c.vital_stats.split('-');
                 if(parts.length === 3) {
@@ -291,39 +247,28 @@ $my_events = $evt_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
                     document.getElementById('edit_hips').value = parts[2];
                 }
             }
-            
             openModal('editModal');
         }
 
-        // Mode: Edit (Normal)
         function openEditModal(c) {
             document.getElementById('modalTitle').innerText = "Edit Contestant";
             document.getElementById('photoGroup').style.display = 'block';
             document.getElementById('modalActions').style.display = 'block';
-            
-            // Enable fields
             const inputs = document.querySelectorAll('#editModal input, #editModal select');
             inputs.forEach(i => i.disabled = false);
-            
             populateModal(c);
         }
 
-        // Mode: View (Read Only)
         function openViewModal(c) {
             populateModal(c);
             document.getElementById('modalTitle').innerText = "Application Details";
-            document.getElementById('photoGroup').style.display = 'none'; // Hide upload in view mode
-            
-            // Disable all fields
+            document.getElementById('photoGroup').style.display = 'none';
             const inputs = document.querySelectorAll('#editModal input, #editModal select');
             inputs.forEach(i => i.disabled = true);
-
-            // Hide Save button
             document.getElementById('modalActions').innerHTML = 
                 `<button type="button" onclick="closeModal('editModal')" style="padding:8px 15px; border:none; background:#e5e7eb; border-radius:4px; cursor:pointer;">Close</button>`;
         }
 
-        // Toast
         function showToast(message, type = 'success') {
             const container = document.getElementById('toast-container');
             const toast = document.createElement('div');

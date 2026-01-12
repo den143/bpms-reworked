@@ -36,58 +36,10 @@ if ($active_event) {
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Manage Judges - BPMS</title>
-    <link rel="stylesheet" href="./assets/css/style.css?v=2">
+    <link rel="stylesheet" href="./assets/css/style.css?v=5">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-        /* EXISTING STYLES */
-        .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-        .header-actions { display: flex; gap: 10px; }
-        .btn-add { background-color: #F59E0B; color: white; padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 13px; }
-        .btn-add:hover { background-color: #d97706; }
-        .btn-secondary { background-color: white; border: 1px solid #d1d5db; color: #374151; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 5px; }
-        .btn-secondary:hover { background-color: #f3f4f6; }
-        .table-card { background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); overflow: hidden; }
-        .data-table { width: 100%; border-collapse: collapse; }
-        .data-table th, .data-table td { padding: 15px; text-align: left; border-bottom: 1px solid #f3f4f6; vertical-align: middle; }
-        .data-table th { background-color: #f9fafb; font-weight: 600; color: #6b7280; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
-        .badge-chairman { background: #dbeafe; color: #1e40af; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: bold; text-transform: uppercase; display: inline-block; }
-        .badge-judge { color: #6b7280; font-size: 12px; font-weight: 500; }
-        .icon-btn { width: 32px; height: 32px; border-radius: 6px; border: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: all 0.2s; color: white; font-size: 13px; margin-right: 4px; }
-        .btn-edit { background: #3b82f6; color: white; }
-        .btn-edit:hover { background: #2563eb; }
-        .btn-reminder { background: #0ea5e9; color: white; } 
-        .btn-reminder:hover { background: #0284c7; }
-        .btn-reset { background: #f59e0b; color: white; }
-        .btn-reset:hover { background: #d97706; }
-        .btn-archive { background: #f97316; color: white; } 
-        .btn-archive:hover { background: #ea580c; }
-        .btn-restore { background: #10b981; color: white; }
-        .btn-restore:hover { background: #059669; }
-        .btn-delete { background: #ef4444; color: white; }
-        .btn-delete:hover { background: #dc2626; }
-        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; justify-content: center; align-items: center; z-index: 1000; }
-        .modal-content { background: white; padding: 25px; width: 400px; border-radius: 12px; }
-        .form-group { margin-bottom: 15px; position: relative; }
-        .form-control { width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; }
-        .toggle-password { position: absolute; right: 10px; top: 35px; cursor: pointer; color: #9ca3af; }
-        button:disabled { opacity: 0.7; cursor: wait; }
-
-        /* LOADING SPINNER OVERLAY */
-        .loading-overlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(255, 255, 255, 0.8);
-            display: none; justify-content: center; align-items: center;
-            z-index: 9999; backdrop-filter: blur(2px);
-        }
-        .spinner {
-            border: 5px solid #f3f3f3;
-            border-top: 5px solid #F59E0B;
-            border-radius: 50%; width: 50px; height: 50px;
-            animation: spin 1s linear infinite;
-        }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-    </style>
 </head>
 <body>
 
@@ -98,12 +50,19 @@ if ($active_event) {
         </div>
     </div>
 
+    <div id="sidebarOverlay" class="sidebar-overlay" onclick="toggleSidebar()"></div>
+
     <div class="main-wrapper">
         <?php require_once __DIR__ . '/../app/views/partials/sidebar.php'; ?>
 
         <div class="content-area">
             <div class="navbar">
-                <div class="navbar-title">Manage Judges</div>
+                <div style="display:flex; align-items:center; gap: 15px;">
+                    <button class="menu-toggle" onclick="toggleSidebar()">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                    <div class="navbar-title">Manage Judges</div>
+                </div>
             </div>
 
             <div class="container">
@@ -135,7 +94,7 @@ if ($active_event) {
                         </div>
                     </div>
 
-                    <div class="table-card">
+                    <div class="table-card" style="overflow-x:auto;">
                         <table class="data-table">
                             <thead>
                                 <tr>
@@ -198,7 +157,6 @@ if ($active_event) {
     <div id="addModal" class="modal-overlay">
         <div class="modal-content">
             <h3 style="margin-bottom:20px; color:#111827;">Add New Judge</h3>
-            
             <form id="addJudgeForm" action="../api/judge.php" method="POST">
                 <input type="hidden" name="action" value="add">
                 <input type="hidden" name="event_id" value="<?= $active_event['id'] ?? '' ?>">
@@ -225,7 +183,6 @@ if ($active_event) {
     <div id="editModal" class="modal-overlay">
         <div class="modal-content">
             <h3 style="margin-bottom:20px; color:#111827;">Edit Judge</h3>
-            
             <form id="editJudgeForm" action="../api/judge.php" method="POST">
                 <input type="hidden" name="action" value="update">
                 <input type="hidden" name="link_id" id="edit_link_id">
@@ -251,6 +208,20 @@ if ($active_event) {
     </div>
 
     <script>
+        // MOBILE SIDEBAR TOGGLE
+        function toggleSidebar() {
+            const sidebar = document.querySelector('.sidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+            
+            if (sidebar.style.left === '0px') {
+                sidebar.style.left = '-280px'; // Close
+                overlay.style.display = 'none';
+            } else {
+                sidebar.style.left = '0px'; // Open
+                overlay.style.display = 'block';
+            }
+        }
+
         function openModal(id) { document.getElementById(id).style.display = 'flex'; }
         function closeModal(id) { document.getElementById(id).style.display = 'none'; }
         
@@ -274,19 +245,16 @@ if ($active_event) {
             }
         }
 
-        // --- SIMPLE UI SPINNER LOGIC (Standard Submit) --- //
+        // --- SPINNER LOGIC (Standard Submit) ---
         function setupFormLoader(formId, btnId) {
             const form = document.getElementById(formId);
             const btn = document.getElementById(btnId);
             
             if(form) {
                 form.onsubmit = function() {
-                    // 1. Show Spinner
                     document.getElementById('globalSpinner').style.display = 'flex';
-                    // 2. Disable Button to prevent double-click
                     btn.disabled = true;
                     btn.innerText = "Processing...";
-                    // 3. Browser takes over and loads the next page...
                 };
             }
         }
@@ -312,27 +280,25 @@ if ($active_event) {
         function showToast(message, type = 'success') {
             const container = document.getElementById('toast-container');
             const toast = document.createElement('div');
-            // Check for 'warning' type
             let bgClass = type;
             let icon = '<i class="fas fa-check-circle"></i>';
             
             if(type === 'error') icon = '<i class="fas fa-exclamation-circle"></i>';
             if(type === 'warning') {
                 icon = '<i class="fas fa-exclamation-triangle"></i>';
-                // Add specific styling for warning if not in CSS, or let it fallback
                 toast.style.borderLeft = "4px solid #F59E0B"; 
             }
 
             toast.className = `toast ${type}`;
             toast.innerHTML = `${icon} <span>${message}</span>`;
             container.appendChild(toast);
-            setTimeout(() => { toast.remove(); }, 5000); // 5 seconds for warning
+            setTimeout(() => { toast.remove(); }, 5000);
         }
         
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.has('success')) showToast(urlParams.get('success'), 'success');
         if (urlParams.has('error')) showToast(urlParams.get('error'), 'error');
-        if (urlParams.has('warning')) showToast(urlParams.get('warning'), 'warning'); // NEW WARNING HANDLER
+        if (urlParams.has('warning')) showToast(urlParams.get('warning'), 'warning'); 
 
         if (urlParams.has('success') || urlParams.has('error') || urlParams.has('warning')) {
             const newUrl = window.location.pathname + (urlParams.has('view') ? '?view=' + urlParams.get('view') : '');

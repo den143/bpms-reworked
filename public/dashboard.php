@@ -7,7 +7,6 @@ require_once __DIR__ . '/../app/config/database.php';
 // 1. Fetch Active Event for this Manager
 $manager_id = $_SESSION['user_id'];
 
-// UPDATED: Column 'manager_id' and 'title'
 $event_query = $conn->prepare("SELECT id, title, event_date, venue FROM events WHERE manager_id = ? AND status = 'Active' LIMIT 1");
 $event_query->bind_param("i", $manager_id);
 $event_query->execute();
@@ -15,7 +14,7 @@ $event_result = $event_query->get_result();
 
 $active_event = $event_result->fetch_assoc();
 $event_id = $active_event['id'] ?? null;
-$event_title = $active_event['title'] ?? "No Active Event"; // Changed 'name' to 'title'
+$event_title = $active_event['title'] ?? "No Active Event";
 $event_venue = $active_event['venue'] ?? "No Venue Selected";
 $event_date_str = $active_event['event_date'] ?? null;
 
@@ -37,7 +36,6 @@ $count_rounds = 0;
 
 if ($event_id) {
     // A. Count Active Contestants
-    // UPDATED: Table 'event_contestants' (ec)
     $c_stmt = $conn->prepare("
         SELECT COUNT(*) as total 
         FROM users u 
@@ -49,7 +47,6 @@ if ($event_id) {
     $count_contestants = $c_stmt->get_result()->fetch_assoc()['total'];
 
     // B. Count Active Judges
-    // Matches 'event_judges' table
     $j_stmt = $conn->prepare("
         SELECT COUNT(*) as total 
         FROM event_judges 
@@ -60,7 +57,6 @@ if ($event_id) {
     $count_judges = $j_stmt->get_result()->fetch_assoc()['total'];
     
     // C. Count Rounds
-    // Matches 'rounds' table
     $r_stmt = $conn->prepare("SELECT COUNT(*) as total FROM rounds WHERE event_id = ? AND is_deleted = 0");
     $r_stmt->bind_param("i", $event_id);
     $r_stmt->execute();
@@ -79,7 +75,7 @@ unset($_SESSION['success'], $_SESSION['error'], $_SESSION['show_modal']);
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Event Manager Dashboard</title>
-    <link rel="stylesheet" href="./assets/css/style.css">
+    <link rel="stylesheet" href="./assets/css/style.css?v=2">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
     <style>
@@ -136,6 +132,8 @@ unset($_SESSION['success'], $_SESSION['error'], $_SESSION['show_modal']);
     </style>
 </head>
 <body>
+    
+    <div id="sidebarOverlay" class="sidebar-overlay" onclick="toggleSidebar()"></div>
 
     <div class="main-wrapper">
         
@@ -144,7 +142,12 @@ unset($_SESSION['success'], $_SESSION['error'], $_SESSION['show_modal']);
         <div class="content-area">
             
             <div class="navbar">
-                <div class="navbar-title">Event Manager</div>
+                <div style="display:flex; align-items:center; gap: 15px;">
+                    <button class="menu-toggle" onclick="toggleSidebar()">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                    <div class="navbar-title">Event Manager</div>
+                </div>
             </div>
 
             <div class="container">
@@ -295,6 +298,20 @@ unset($_SESSION['success'], $_SESSION['error'], $_SESSION['show_modal']);
     <?php endif; ?>
 
     <script>
+        // MOBILE SIDEBAR TOGGLE
+        function toggleSidebar() {
+            const sidebar = document.querySelector('.sidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+            
+            if (sidebar.style.left === '0px') {
+                sidebar.style.left = '-280px'; // Close
+                overlay.style.display = 'none';
+            } else {
+                sidebar.style.left = '0px'; // Open
+                overlay.style.display = 'block';
+            }
+        }
+
         // Toast Notification Logic
         function showToast(message, type = 'success') {
             const container = document.getElementById('toast-container');
