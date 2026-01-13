@@ -59,14 +59,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     $results = ScoreCalculator::calculate($round_id);
 
     // 2. Logic: Freezing Results
-    // If the round is 'Completed', we DO NOT calculate live anymore. 
     if ($meta['round_status'] === 'Completed') {
         
-        // Note: Assuming 'round_rankings' table exists (created by api\rounds.php)
+        // [FIX] Added backticks around `rank` to prevent SQL Syntax Error
         $sql_saved = "SELECT contestant_id, total_score, `rank` FROM round_rankings WHERE round_id = $round_id";
         $saved_q = $conn->query($sql_saved);
         
-        if ($saved_q) {
+        // Only proceed if the table exists and has data
+        if ($saved_q && $saved_q->num_rows > 0) {
             $saved_map = [];
             while($row = $saved_q->fetch_assoc()) { 
                 $saved_map[$row['contestant_id']] = $row; 
@@ -74,18 +74,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 
             // Overwrite live calculation with saved snapshot
             foreach ($results as $key => $row) {
-                // Handle different array structures safely
-                $cid = $row['contestant_id'] ?? $row['contestant']['id'] ?? 0;
+                // Handle different array structures safely (detail_id vs id)
+                $cid = $row['contestant']['detail_id'] ?? $row['contestant']['id'] ?? $row['contestant_id'] ?? 0;
                 
                 if (isset($saved_map[$cid])) {
                     $results[$key]['final_score'] = number_format($saved_map[$cid]['total_score'], 2);
                     $results[$key]['rank'] = (int)$saved_map[$cid]['rank'];
+                    // Ensure raw_score is also synced for sorting
+                    $results[$key]['raw_score'] = (float)$saved_map[$cid]['total_score'];
                 }
             }
             
             // Re-sort based on frozen rank
             usort($results, function($a, $b) { 
-                return ($a['rank'] > 0 ? $a['rank'] : 999) <=> ($b['rank'] > 0 ? $b['rank'] : 999); 
+                // Push unranked (0) to bottom
+                $rA = ($a['rank'] > 0) ? $a['rank'] : 9999;
+                $rB = ($b['rank'] > 0) ? $b['rank'] : 9999;
+                return $rA <=> $rB; 
             });
         }
     }
@@ -102,7 +107,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     echo json_encode([
         'status' => 'success',
         'round_status' => $meta['round_status'],
-        'qualifiers' => $meta['qualifiers'],
+        'qualifiers' => (int)$meta['qualifiers'],
         'judges' => $meta['judges'],
         'submitted_judges' => $submitted_ids,
         'ranking' => $results,

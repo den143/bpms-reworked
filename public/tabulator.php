@@ -109,7 +109,19 @@ $current_round_id = isset($_GET['round_id']) ? (int)$_GET['round_id'] : ($rounds
 
         /* --- TABULATOR SPECIFIC SIDEBAR --- */
         .sidebar-tabulator { background-color: #111827; }
+
+        /* --- STATUS VISUALS --- */
+        .row-qualified { background-color: #ecfdf5 !important; border-left: 5px solid #059669; }
+        .row-eliminated { background-color: #fff !important; color: #6b7280; }
         
+        .status-badge { 
+            font-size: 10px; padding: 3px 8px; border-radius: 12px; 
+            font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px;
+        }
+        .badge-q { background: #059669; color: white; }
+        .badge-e { background: #e5e7eb; color: #6b7280; border: 1px solid #d1d5db; }
+        .badge-pending { background: #f3f4f6; color: #9ca3af; border: 1px solid #e5e7eb; } /* Neutral Badge */
+
         /* ======================== */
         /* PRINT STYLES (FOOLPROOF) */
         /* ======================== */
@@ -156,6 +168,10 @@ $current_round_id = isset($_GET['round_id']) ? (int)$_GET['round_id'] : ($rounds
             /* 6. SEGMENT STYLING */
             .print-segment-block { margin-bottom: 25px; page-break-inside: avoid; }
             .print-segment-title { font-size: 12pt; font-weight: bold; margin-bottom: 5px; text-transform: uppercase; border-bottom: 1px solid #000; display: inline-block; }
+
+            /* --- STATUS VISUALS --- */
+            .row-qualified { background-color: #ecfdf5 !important; border-left: 5px solid #059669; }
+            .row-eliminated { background-color: #fff !important; color: #000; }
         }
     </style>
 </head>
@@ -336,12 +352,18 @@ $current_round_id = isset($_GET['round_id']) ? (int)$_GET['round_id'] : ($rounds
         if(btnRefreshIcon) btnRefreshIcon.classList.add('fa-spin');
 
         try {
-            const res = await fetch(`${TALLY_API_URL}?round_id=${ROUND_ID}`);
+            // FIX 1: Added "&audit=true" here. 
+            // This tells the backend to calculate and return the matrix data.
+            const res = await fetch(`${TALLY_API_URL}?round_id=${ROUND_ID}&audit=true`);
+            
             currentData = await res.json();
+            
             if (currentData.status === 'success') {
                 renderJudgeStatus(currentData.judges, currentData.submitted_judges || []);
                 renderSummaryTable();
-                renderAuditTable();
+                
+                // This will now work because currentData.audit is no longer null
+                renderAuditTable(); 
                 
                 document.getElementById('roundStatusText').innerText = currentData.round_status;
                 
@@ -374,11 +396,19 @@ $current_round_id = isset($_GET['round_id']) ? (int)$_GET['round_id'] : ($rounds
         try {
             const res = await fetch(`${AWARDS_API}?event_id=${EVENT_ID}`);
             const data = await res.json();
+            
+            // FIX 2: Added better error handling to show why awards might be blank
             if(data.status === 'success') {
                 allContestants = data.contestants;
                 renderAwards(data.awards);
+            } else {
+                console.error("API Error:", data);
+                document.getElementById('awardsGrid').innerHTML = '<div style="padding:20px; text-align:center; color:red;">Error loading awards.</div>';
             }
-        } catch(e) { console.error("Award Error", e); }
+        } catch(e) { 
+            console.error("Award Network Error", e); 
+            document.getElementById('awardsGrid').innerHTML = '<div style="padding:20px; text-align:center; color:red;">Network Error. Check console.</div>';
+        }
     }
 
     function renderAwards(awards) {
@@ -393,10 +423,12 @@ $current_round_id = isset($_GET['round_id']) ? (int)$_GET['round_id'] : ($rounds
             const win = item.winner;
             let winnerHTML = '';
 
-            if (aw.source_type === 'Manual') {
+            // FIX: Changed 'source_type' to 'selection_method' to match Database
+            if (aw.selection_method === 'Manual') {
                 let options = `<option value="">-- Select Winner --</option>`;
                 allContestants.forEach(c => {
-                    const sel = (win && c.name === win.name) ? 'selected' : '';
+                    // Check if this contestant is the current winner
+                    const sel = (win && c.id == win.id) ? 'selected' : '';
                     options += `<option value="${c.id}" ${sel}>${c.name}</option>`;
                 });
                 
@@ -406,6 +438,7 @@ $current_round_id = isset($_GET['round_id']) ? (int)$_GET['round_id'] : ($rounds
                 `;
 
             } else {
+                // Logic for Calculated Awards (Highest Scores / Votes)
                 if (win) {
                     winnerHTML = `<div class="winner-auto"><i class="fas fa-trophy" style="font-size:1.2em; color:gold;"></i> <span>${win.name}</span></div>`;
                     if(win.total_score) winnerHTML += `<div style="font-size:11px; margin-top:4px;">Score: ${parseFloat(win.total_score).toFixed(2)}</div>`;
@@ -417,7 +450,7 @@ $current_round_id = isset($_GET['round_id']) ? (int)$_GET['round_id'] : ($rounds
 
             return `
             <div class="award-tile">
-                <h4>${aw.title} <span class="award-badge">${aw.source_type}</span></h4>
+                <h4>${aw.title} <span class="award-badge">${aw.selection_method.replace('_', ' ')}</span></h4>
                 <div style="font-size:11px; color:#666; margin-bottom:8px;">${aw.description || ''}</div>
                 <div class="award-winner-box">${winnerHTML}</div>
             </div>`;
@@ -455,27 +488,86 @@ $current_round_id = isset($_GET['round_id']) ? (int)$_GET['round_id'] : ($rounds
     }
 
     function renderSummaryTable() {
-        const { judges, ranking } = currentData;
+        if(!currentData) return;
+        const { judges, ranking, qualifiers, round_status } = currentData;
+        
         const thead = document.getElementById('tableHeader');
         const tbody = document.getElementById('tableBody');
 
-        thead.innerHTML = `<th>Rank</th><th style="text-align:left;">Contestant</th>` + 
-            judges.map(j => `<th>${j.name}</th>`).join('') + `<th>Final Average</th>`;
+        // 1. Build Header
+        thead.innerHTML = `
+            <th>Rank</th>
+            <th style="text-align:left;">Contestant</th>
+            ${judges.map(j => `<th>${j.name}</th>`).join('')}
+            <th>Final</th>
+            <th>Status</th> 
+        `;
 
         if (ranking.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="${judges.length + 3}" style="padding:40px; color:#999;">No scores recorded yet. Waiting for judges...</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="${judges.length + 4}" style="padding:40px; color:#999;">No scores recorded yet.</td></tr>`;
             return;
         }
 
-        tbody.innerHTML = ranking.map(row => {
+        // 2. Build Rows
+        tbody.innerHTML = ranking.map((row, index) => {
             const c = row.contestant;
-            return `<tr class="${row.rank <= 3 ? 'rank-'+row.rank : ''}">
-                <td><div class="rank-box">${row.rank}</div></td>
+            const rank = row.rank;
+            const isCompleted = (round_status === 'Completed');
+            
+            // Logic: Top N Qualify
+            const isQualified = (rank <= qualifiers);
+            
+            // Visual Classes
+            let rowClass = "";
+            let badgeHTML = "";
+
+            if (isCompleted) {
+                // Round Locked: Show Winners vs Losers
+                if (isQualified) {
+                    rowClass = "row-qualified";
+                    badgeHTML = `<span class="status-badge badge-q">QUALIFIED</span>`;
+                } else {
+                    rowClass = "row-eliminated";
+                    badgeHTML = `<span class="status-badge badge-e">ELIMINATED</span>`;
+                }
+            } else {
+                // Round Active: No predictions, just Pending
+                rowClass = ""; 
+                badgeHTML = `<span class="status-badge badge-pending">PENDING</span>`;
+            }
+
+            // Rank Box Logic (Always show rank, but style varies)
+            let rankHTML = '';
+            if (isQualified || !isCompleted) {
+                // Show colorful circle for Winners or Everyone (if pending)
+                rankHTML = `<div class="rank-box" style="${rowClass.includes('eliminated') ? 'background:#ccc;' : ''}">${rank}</div>`;
+            } else {
+                // Plain text for Eliminated people (only after lock)
+                rankHTML = `<span style="font-weight:bold; font-size:14px; color:#666;">${rank}</span>`;
+            }
+
+            return `
+            <tr class="${rowClass}">
+                <td>${rankHTML}</td>
+                
                 <td class="contestant-cell">
                     <img src="assets/uploads/contestants/${c.photo}" class="c-img" onerror="this.src='assets/images/default_user.png'">
-                    <span>${c.name}</span> </td>
-                ${judges.map(j => `<td>${row.judge_scores[j.id] !== undefined ? parseFloat(row.judge_scores[j.id]).toFixed(2) : '<span style="color:#ddd">--</span>'}</td>`).join('')}
-                <td class="final-score">${parseFloat(row.final_score).toFixed(2)}</td>
+                    <div>
+                        <span style="font-weight:bold; display:block;">${c.name}</span>
+                    </div>
+                </td>
+
+                ${judges.map(j => `
+                    <td style="font-size:13px; color:inherit;">
+                        ${row.judge_scores[j.id] !== undefined ? parseFloat(row.judge_scores[j.id]).toFixed(2) : '--'}
+                    </td>
+                `).join('')}
+
+                <td class="final-score" style="color:inherit;">
+                    ${parseFloat(row.final_score).toFixed(2)}
+                </td>
+
+                <td>${badgeHTML}</td>
             </tr>`;
         }).join('');
     }
@@ -491,7 +583,8 @@ $current_round_id = isset($_GET['round_id']) ? (int)$_GET['round_id'] : ($rounds
         audit.segments.forEach(seg => {
             const segCriteria = audit.criteria.filter(cr => cr.segment_id == seg.id);
             const colSpan = judges.length * (segCriteria.length + 1); 
-            htmlScreen += `<th colspan="${colSpan}" class="audit-header-main">${seg.title} (${seg.weight_percentage}%)</th>`;
+            // FIX: Changed weight_percentage to weight_percent
+            htmlScreen += `<th colspan="${colSpan}" class="audit-header-main">${seg.title} (${seg.weight_percent}%)</th>`;
         });
         htmlScreen += `</tr><tr>`;
 
@@ -517,12 +610,16 @@ $current_round_id = isset($_GET['round_id']) ? (int)$_GET['round_id'] : ($rounds
             htmlScreen += `<tr><td class="contestant-cell"><b>${c.name}</b></td>`;
             audit.segments.forEach(seg => {
                 const segCriteria = audit.criteria.filter(cr => cr.segment_id == seg.id);
-                const weight = parseFloat(seg.weight_percentage) / 100;
+                // FIX: Changed weight_percentage to weight_percent
+                const weight = parseFloat(seg.weight_percent) / 100;
+                
                 judges.forEach(j => {
                     let segRawSum = 0;
                     let hasAllScores = true;
                     segCriteria.forEach(crit => {
-                        const score = audit.scores[c.user_id]?.[j.id]?.[crit.id];
+                        const cid = c.detail_id || c.user_id; 
+                        const score = audit.scores[cid]?.[j.id]?.[crit.id];
+                        
                         if (score !== undefined) {
                             htmlScreen += `<td>${score}</td>`;
                             segRawSum += parseFloat(score);
@@ -546,10 +643,12 @@ $current_round_id = isset($_GET['round_id']) ? (int)$_GET['round_id'] : ($rounds
         
         audit.segments.forEach(seg => {
             const segCriteria = audit.criteria.filter(cr => cr.segment_id == seg.id);
-            const weight = parseFloat(seg.weight_percentage) / 100;
+            // FIX: Changed weight_percentage to weight_percent
+            const weight = parseFloat(seg.weight_percent) / 100;
 
             printHTML += `<div class="print-segment-block">`;
-            printHTML += `<div class="print-segment-title">AUDIT: ${seg.title} (${seg.weight_percentage}%)</div>`;
+            // FIX: Changed weight_percentage to weight_percent
+            printHTML += `<div class="print-segment-title">AUDIT: ${seg.title} (${seg.weight_percent}%)</div>`;
             printHTML += `<table class="tally-table"><thead><tr><th rowspan="2">Contestant</th>`;
             
             judges.forEach(j => {
@@ -571,7 +670,8 @@ $current_round_id = isset($_GET['round_id']) ? (int)$_GET['round_id'] : ($rounds
                     let segRawSum = 0;
                     let hasAllScores = true;
                     segCriteria.forEach(crit => {
-                        const score = audit.scores[c.user_id]?.[j.id]?.[crit.id];
+                        const cid = c.detail_id || c.user_id;
+                        const score = audit.scores[cid]?.[j.id]?.[crit.id];
                         if (score !== undefined) {
                             printHTML += `<td>${score}</td>`;
                             segRawSum += parseFloat(score);
@@ -591,7 +691,6 @@ $current_round_id = isset($_GET['round_id']) ? (int)$_GET['round_id'] : ($rounds
         
         containerPrint.innerHTML = printHTML;
     }
-
     // --- LOCK ROUND LOGIC ---
     async function lockRound() {
         if (!confirm("CONFIRM FINALIZATION?\n\nThis will lock the scores and promote winners to the next round.")) return;

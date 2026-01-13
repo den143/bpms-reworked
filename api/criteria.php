@@ -97,6 +97,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $weight   = (float)$_POST['weight_percentage']; 
     $order    = (int)$_POST['ordering'];
 
+    // VALIDATION: POSITIVE NUMBERS ONLY
+    if ($weight <= 0) {
+        header("Location: ../public/criteria.php?round_id=$round_id&error=Weight must be a positive number.");
+        exit();
+    }
+
     // Validations: Check Math (Weight) and Display (Order)
     $checkW = validateSegmentWeight($conn, $round_id, $weight);
     if ($checkW !== true) { header("Location: ../public/criteria.php?round_id=$round_id&error=" . urlencode($checkW)); exit(); }
@@ -128,6 +134,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $weight   = (float)$_POST['weight_percentage'];
     $order    = (int)$_POST['ordering'];
 
+    // VALIDATION: POSITIVE NUMBERS ONLY
+    if ($weight <= 0) {
+        header("Location: ../public/criteria.php?round_id=$round_id&error=Weight must be a positive number.");
+        exit();
+    }
+
     // Validations (passing $seg_id to exclude itself from checks)
     $checkW = validateSegmentWeight($conn, $round_id, $weight, $seg_id);
     if ($checkW !== true) { header("Location: ../public/criteria.php?round_id=$round_id&error=" . urlencode($checkW)); exit(); }
@@ -157,7 +169,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     checkRoundLock($conn, $r_id);
 
     // Safety: Check if scores exist before deleting
-    // FIX: Changed "SELECT id" to "SELECT s.id" to resolve ambiguity
     $check = $conn->prepare("SELECT s.id FROM scores s JOIN criteria c ON s.criteria_id = c.id WHERE c.segment_id = ? LIMIT 1");
     $check->bind_param("i", $id);
     $check->execute();
@@ -193,6 +204,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $max_score  = (float)$_POST['max_score'];
     $order      = (int)$_POST['ordering'];
 
+    // VALIDATION: POSITIVE NUMBERS ONLY
+    if ($max_score <= 0) {
+        header("Location: ../public/criteria.php?round_id=$r_id&error=Max score must be a positive number.");
+        exit();
+    }
+
     // Validations
     $checkS = validateCriteriaScore($conn, $segment_id, $max_score);
     if ($checkS !== true) { header("Location: ../public/criteria.php?round_id=$r_id&error=" . urlencode($checkS)); exit(); }
@@ -225,6 +242,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $desc       = trim($_POST['description']); 
     $max_score  = (float)$_POST['max_score'];
     $order      = (int)$_POST['ordering'];
+
+    // VALIDATION: POSITIVE NUMBERS ONLY
+    if ($max_score <= 0) {
+        header("Location: ../public/criteria.php?round_id=$r_id&error=Max score must be a positive number.");
+        exit();
+    }
 
     // Validations
     $checkS = validateCriteriaScore($conn, $segment_id, $max_score, $crit_id);

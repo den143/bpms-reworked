@@ -61,8 +61,9 @@ class ScoreCalculator {
         // 5. Fetch Segments & Criteria
         $segments = $db->query("SELECT id, weight_percent FROM segments WHERE round_id = $round_id AND is_deleted = 0 ORDER BY ordering")->fetch_all(MYSQLI_ASSOC);
         
+        // UPDATED: Added 'is_deleted = 0' to subquery to ensure criteria from deleted segments are ignored in calculations too
         $all_criteria = $db->query("SELECT id, segment_id FROM criteria 
-                                    WHERE is_deleted = 0 AND segment_id IN (SELECT id FROM segments WHERE round_id = $round_id)")->fetch_all(MYSQLI_ASSOC);
+                                    WHERE is_deleted = 0 AND segment_id IN (SELECT id FROM segments WHERE round_id = $round_id AND is_deleted = 0)")->fetch_all(MYSQLI_ASSOC);
 
         // Map criteria by Segment ID
         $criteria_by_segment = [];
@@ -70,7 +71,7 @@ class ScoreCalculator {
             $criteria_by_segment[$c['segment_id']][] = $c['id'];
         }
 
-        // 6. Fetch Scores Map (CRITICAL UPDATE)
+        // 6. Fetch Scores Map
         $sql_scores = "SELECT sc.contestant_id, sc.judge_id, sc.criteria_id, sc.score_value
                        FROM scores sc
                        JOIN criteria c ON sc.criteria_id = c.id
@@ -159,9 +160,18 @@ class ScoreCalculator {
         $round_id = (int)$round_id;
         
         // Debugging / Audit Tool Logic
-        $segments = $db->query("SELECT id, title, weight_percent FROM segments WHERE round_id = $round_id ORDER BY ordering")->fetch_all(MYSQLI_ASSOC);
         
-        $criteria = $db->query("SELECT c.id, c.title, c.max_score, c.segment_id FROM criteria c JOIN segments s ON c.segment_id = s.id WHERE s.round_id = $round_id ORDER BY c.id")->fetch_all(MYSQLI_ASSOC);
+        // FIX 1: Filter out deleted segments
+        $segments = $db->query("SELECT id, title, weight_percent FROM segments WHERE round_id = $round_id AND is_deleted = 0 ORDER BY ordering")->fetch_all(MYSQLI_ASSOC);
+        
+        // FIX 2: Filter out deleted criteria (and criteria linked to deleted segments)
+        $criteria = $db->query("SELECT c.id, c.title, c.max_score, c.segment_id 
+                                FROM criteria c 
+                                JOIN segments s ON c.segment_id = s.id 
+                                WHERE s.round_id = $round_id 
+                                AND s.is_deleted = 0 
+                                AND c.is_deleted = 0 
+                                ORDER BY c.id")->fetch_all(MYSQLI_ASSOC);
         
         $judges = $db->query("SELECT u.id, u.name FROM users u JOIN event_judges ej ON u.id = ej.judge_id WHERE ej.event_id = (SELECT event_id FROM rounds WHERE id=$round_id) AND ej.status='Active' AND ej.is_deleted=0")->fetch_all(MYSQLI_ASSOC);
         

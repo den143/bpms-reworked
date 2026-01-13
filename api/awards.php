@@ -20,8 +20,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $event_id = (int)$_POST['event_id'];
     $title    = trim($_POST['title']);
     $desc     = trim($_POST['description']);
-    $type     = $_POST['type']; // Frontend sends: Major, Minor
-    $source   = $_POST['source_type']; // Frontend sends: Manual, Segment, Round, Audience
+    
+    // FIX: Match the HTML form names from public/awards.php
+    $type     = $_POST['category_type'];     // Was 'type'
+    $source   = $_POST['selection_method'];  // Was 'source_type'
     
     // LOGIC: DYNAMIC SOURCE MAPPING (New DB Schema)
     // The new DB separates Segment IDs and Round IDs into different columns
@@ -31,14 +33,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $linked_segment   = null;
     $linked_round     = null;
 
-    if ($source === 'Segment') {
+    // Map the dropdown selection to DB logic
+    if ($source === 'Highest_Segment') {
         $selection_method = 'Highest_Segment';
-        $linked_segment   = (int)$_POST['segment_id'];
-    } elseif ($source === 'Round') {
+        $linked_segment   = (int)$_POST['linked_segment_id']; // Match form name
+    } elseif ($source === 'Highest_Round') {
         $selection_method = 'Highest_Round';
-        $linked_round     = (int)$_POST['round_id'];
-    } elseif ($source === 'Audience') {
+        $linked_round     = (int)$_POST['linked_round_id'];   // Match form name
+    } elseif ($source === 'Audience_Vote') {
         $selection_method = 'Audience_Vote';
+    } else {
+        $selection_method = 'Manual';
     }
 
     // LOGIC: DUPLICATE CHECK
@@ -70,22 +75,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $id       = (int)$_POST['award_id'];
     $title    = trim($_POST['title']);
     $desc     = trim($_POST['description']);
-    $type     = $_POST['type'];
-    $source   = $_POST['source_type'];
+    
+    // FIX: Match the HTML form names
+    $type     = $_POST['category_type'];     // Was 'type'
+    $source   = $_POST['selection_method'];  // Was 'source_type'
     
     // Re-evaluate mapping for updates
     $selection_method = 'Manual';
     $linked_segment   = null;
     $linked_round     = null;
 
-    if ($source === 'Segment') {
+    if ($source === 'Highest_Segment') {
         $selection_method = 'Highest_Segment';
-        $linked_segment   = (int)$_POST['segment_id'];
-    } elseif ($source === 'Round') {
+        $linked_segment   = (int)$_POST['linked_segment_id'];
+    } elseif ($source === 'Highest_Round') {
         $selection_method = 'Highest_Round';
-        $linked_round     = (int)$_POST['round_id'];
-    } elseif ($source === 'Audience') {
+        $linked_round     = (int)$_POST['linked_round_id'];
+    } elseif ($source === 'Audience_Vote') {
         $selection_method = 'Audience_Vote';
+    } else {
+        $selection_method = 'Manual';
     }
 
     // UPDATED: Query matches new schema
@@ -113,6 +122,14 @@ if (isset($_GET['action']) && $_GET['action'] === 'restore') {
     $id = (int)$_GET['id'];
     $conn->query("UPDATE awards SET is_deleted = 0 WHERE id = $id");
     header("Location: ../public/awards.php?success=Award restored");
+    exit();
+}
+
+// ACTION 5: DELETE PERMANENTLY (Optional, if needed)
+if (isset($_GET['action']) && $_GET['action'] === 'delete') {
+    $id = (int)$_GET['id'];
+    $conn->query("DELETE FROM awards WHERE id = $id");
+    header("Location: ../public/awards.php?success=Award deleted permanently");
     exit();
 }
 ?>

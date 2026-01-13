@@ -5,11 +5,8 @@ requireRole('Judge Coordinator');
 require_once __DIR__ . '/../app/config/database.php';
 
 $coordinator_id = $_SESSION['user_id'];
-$message = "";
-$error = "";
 
 // --- 1. FETCH ASSIGNED EVENT (Must happen first to get Event ID) ---
-// UPDATED: Table 'event_teams' and Column 'title'
 $event_stmt = $conn->prepare("
     SELECT e.id, e.title, e.venue, e.event_date, e.status 
     FROM events e 
@@ -35,14 +32,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         $stmt = $conn->prepare("UPDATE judge_round_status SET status = 'Pending' WHERE judge_id = ? AND round_id = ?");
         $stmt->bind_param("ii", $judge_id_to_unlock, $round_id_unlock);
+        
         if ($stmt->execute()) {
-            $message = "Scorecard unlocked successfully.";
+            // FIX: Redirect immediately to prevent "Double Unlock" on refresh
+            header("Location: judge_coordinator.php?success=unlocked");
+            exit();
         } else {
-            $error = "Failed to unlock scorecard.";
+            header("Location: judge_coordinator.php?error=unlock_failed");
+            exit();
         }
     }
 
-    // B. Quick Add Judge (New Functionality)
+    // B. Quick Add Judge
     if (isset($_POST['action']) && $_POST['action'] === 'add_judge' && $event_id) {
         $name = trim($_POST['name']);
         $email = trim($_POST['email']);
@@ -56,11 +57,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $res = $check->get_result();
         
         if ($res->num_rows > 0) {
-            // User exists, just get ID
             $user_row = $res->fetch_assoc();
             $judge_user_id = $user_row['id'];
         } else {
-            // Create new user
             $hashed = password_hash($password, PASSWORD_DEFAULT);
             $role = 'Judge';
             $ins = $conn->prepare("INSERT INTO users (name, email, password, role, created_by) VALUES (?, ?, ?, ?, ?)");
@@ -68,12 +67,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($ins->execute()) {
                 $judge_user_id = $ins->insert_id;
             } else {
-                $error = "Failed to create user account.";
+                header("Location: judge_coordinator.php?error=create_failed");
+                exit();
             }
         }
 
         if (isset($judge_user_id)) {
-            // 2. Link to Event (Check duplicates first)
             $link_check = $conn->prepare("SELECT id FROM event_judges WHERE event_id = ? AND judge_id = ?");
             $link_check->bind_param("ii", $event_id, $judge_user_id);
             $link_check->execute();
@@ -82,12 +81,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $link = $conn->prepare("INSERT INTO event_judges (event_id, judge_id, is_chairman, status) VALUES (?, ?, ?, 'Active')");
                 $link->bind_param("iii", $event_id, $judge_user_id, $is_chairman);
                 if ($link->execute()) {
-                    $message = "Judge added successfully!";
-                } else {
-                    $error = "Failed to assign judge to event.";
+                    // FIX: Redirect on success
+                    header("Location: judge_coordinator.php?success=added");
+                    exit();
                 }
             } else {
-                $error = "This judge is already assigned to this event.";
+                header("Location: judge_coordinator.php?error=duplicate");
+                exit();
             }
         }
     }
@@ -98,7 +98,6 @@ $active_round_id = null;
 $active_round_title = "No Active Round";
 
 if ($event_id) {
-    // Matches 'rounds' table
     $round_stmt = $conn->prepare("SELECT id, title FROM rounds WHERE event_id = ? AND status = 'Active' AND is_deleted = 0 LIMIT 1");
     $round_stmt->bind_param("i", $event_id);
     $round_stmt->execute();
@@ -115,7 +114,6 @@ $total_judges = 0;
 $submitted_count = 0;
 
 if ($event_id) {
-    // UPDATED: Added is_deleted check for event_judges
     $sql = "
         SELECT u.id, u.name, u.email, ej.is_chairman, ej.status as judge_role_status,
                COALESCE(MAX(jrs.status), 'Pending') as round_status,
@@ -141,6 +139,19 @@ if ($event_id) {
             $submitted_count++;
         }
     }
+}
+
+// Handle GET Messages for Toast (Displayed AFTER redirect)
+$message = "";
+$error = "";
+if (isset($_GET['success'])) {
+    if ($_GET['success'] == 'unlocked') $message = "Scorecard unlocked successfully.";
+    if ($_GET['success'] == 'added') $message = "Judge added successfully!";
+}
+if (isset($_GET['error'])) {
+    if ($_GET['error'] == 'unlock_failed') $error = "Failed to unlock scorecard.";
+    if ($_GET['error'] == 'create_failed') $error = "Failed to create user account.";
+    if ($_GET['error'] == 'duplicate') $error = "This judge is already assigned.";
 }
 ?>
 
@@ -181,6 +192,17 @@ if ($event_id) {
         .btn-primary:hover { background-color: #d97706; }
         .chairman-tag { background-color: #4F46E5; color: white; padding: 2px 6px; border-radius: 4px; font-size: 10px; margin-left: 5px; vertical-align: middle; }
     </style>
+    
+    <script>
+        if (window.history.replaceState) {
+            const url = new URL(window.location.href);
+            if(url.searchParams.has('success') || url.searchParams.has('error')) {
+                // Keep the toast visible but clean the URL so refresh doesn't re-trigger anything
+                const cleanUrl = window.location.pathname;
+                window.history.replaceState(null, '', cleanUrl);
+            }
+        }
+    </script>
 </head>
 <body>
 

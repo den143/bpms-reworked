@@ -7,8 +7,7 @@ class AwardCalculator {
         global $conn;
         
         // Matches 'awards' table
-        $sql = "SELECT * FROM awards WHERE event_id = ? AND is_deleted = 0 ORDER BY ordering ASC";
-        $stmt = $conn->prepare($sql);
+        $sql = "SELECT * FROM awards WHERE event_id = ? AND is_deleted = 0 ORDER BY id ASC";        $stmt = $conn->prepare($sql);
         $stmt->bind_param("i", $event_id);
         $stmt->execute();
         $awards = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
@@ -68,13 +67,13 @@ class AwardCalculator {
 
     private static function getAudienceWinner($event_id) {
         global $conn;
-        // Matches 'audience_votes' table structure
+        // FIX: Added u.name and ec.photo to GROUP BY
         $sql = "SELECT ec.id, u.name, ec.photo, COUNT(av.id) as votes 
                 FROM audience_votes av 
                 JOIN event_contestants ec ON av.contestant_id = ec.id 
                 JOIN users u ON ec.user_id = u.id 
                 WHERE ec.event_id = ? 
-                GROUP BY av.contestant_id 
+                GROUP BY ec.id, u.name, ec.photo
                 ORDER BY votes DESC LIMIT 1";
         $stmt = $conn->prepare($sql);
         $stmt->bind_param("i", $event_id);
@@ -84,13 +83,13 @@ class AwardCalculator {
 
     private static function getAudienceTally($event_id) {
         global $conn;
-        // UPDATED: Same logic as above but returns list for charts
+        // FIX: Added u.name to GROUP BY
         $sql = "SELECT ec.id, u.name, COUNT(av.id) as votes 
                 FROM audience_votes av 
                 JOIN event_contestants ec ON av.contestant_id = ec.id 
                 JOIN users u ON ec.user_id = u.id 
                 WHERE ec.event_id = ? 
-                GROUP BY av.contestant_id 
+                GROUP BY ec.id, u.name 
                 ORDER BY votes DESC";
         $stmt = $conn->prepare($sql);
         $stmt->bind_param("i", $event_id);
@@ -100,6 +99,7 @@ class AwardCalculator {
 
     private static function getSegmentWinner($segment_id) {
         global $conn;
+        // FIX: Added u.name and ec.photo to GROUP BY
         // 1. 'scores' table now links directly to 'event_contestants' via 'contestant_id'
         // 2. Joining 'criteria' to filter by 'segment_id'
         $sql = "SELECT ec.id, u.name, ec.photo, SUM(s.score_value) as total_score 
@@ -108,7 +108,7 @@ class AwardCalculator {
                 JOIN event_contestants ec ON s.contestant_id = ec.id 
                 JOIN users u ON ec.user_id = u.id 
                 WHERE c.segment_id = ? 
-                GROUP BY s.contestant_id 
+                GROUP BY ec.id, u.name, ec.photo
                 ORDER BY total_score DESC LIMIT 1";
         $stmt = $conn->prepare($sql);
         $stmt->bind_param("i", $segment_id);
@@ -119,6 +119,10 @@ class AwardCalculator {
     private static function getRoundWinner($round_id) {
         global $conn;
         // Uses 'event_contestants' (ec)
+        // Check table exists first (Prevent crash if no rounds locked yet)
+        $check = $conn->query("SHOW TABLES LIKE 'round_rankings'");
+        if(!$check || $check->num_rows == 0) return null;
+
         $sql = "SELECT ec.id, u.name, ec.photo, rr.total_score 
                 FROM round_rankings rr 
                 JOIN event_contestants ec ON rr.contestant_id = ec.id 

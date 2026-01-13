@@ -37,12 +37,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['vote_id'])) {
         $conn->begin_transaction();
         try {
             // A. Insert Vote
-            // Matches 'audience_votes' table structure
-            $stmt_insert = $conn->prepare("INSERT INTO audience_votes (ticket_id, contestant_id, event_id) VALUES (?, ?, ?)");
-            $stmt_insert->bind_param("iii", $ticket_id, $vote_id, $event_id);
+            // FIX: Removed 'event_id' column from INSERT because it does not exist in the DB table 'audience_votes'
+            $stmt_insert = $conn->prepare("INSERT INTO audience_votes (ticket_id, contestant_id) VALUES (?, ?)");
+            $stmt_insert->bind_param("ii", $ticket_id, $vote_id);
             $stmt_insert->execute();
 
             // B. Mark Ticket as Used (Redundant but good for quick status checks)
+            // Note: Your DB trigger 'process_audience_vote' also does this, but keeping it here is safe.
             $stmt_update = $conn->prepare("UPDATE tickets SET status = 'Used' WHERE id = ?");
             $stmt_update->bind_param("i", $ticket_id);
             $stmt_update->execute();
@@ -55,6 +56,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['vote_id'])) {
 
         } catch (Exception $e) {
             $conn->rollback();
+            // error_log($e->getMessage()); // Uncomment to debug in server logs
             $msg = "Error processing vote. Please try again.";
         }
     }

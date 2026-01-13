@@ -40,38 +40,55 @@ function validateAdvancement($conn, $event_id, $current_order, $current_qualify_
     return true;
 }
 
-// 2. Strict Configuration Check (100% Total)
-function validateRoundConfiguration($conn, $round_id) {
-    // A. Check if Segments sum to 100%
-    // Matches 'segments' table 'weight_percent' column
+// 2. Strict Configuration Check (Judges, Contestants, 100% Weights, 100pts Criteria)
+function validateRoundConfiguration($conn, $round_id, $event_id) {
+    
+    // A. REQUIRE REGISTERED JUDGES
+    $j_check = $conn->query("SELECT COUNT(*) as cnt FROM event_judges WHERE event_id = $event_id AND status = 'Active' AND is_deleted = 0")->fetch_assoc();
+    if ($j_check['cnt'] == 0) {
+        return "Cannot Start: No active judges have been assigned to this event.";
+    }
+
+    // B. REQUIRE REGISTERED CONTESTANTS
+    $c_check = $conn->query("SELECT COUNT(*) as cnt FROM event_contestants WHERE event_id = $event_id AND status IN ('Active', 'Qualified') AND is_deleted = 0")->fetch_assoc();
+    if ($c_check['cnt'] == 0) {
+        return "Cannot Start: There are no active contestants registered for this event.";
+    }
+
+    // C. CHECK ROUND WEIGHT (Must be exactly 100%)
     $stmt = $conn->prepare("SELECT SUM(weight_percent) as total FROM segments WHERE round_id = ? AND is_deleted = 0");
     $stmt->bind_param("i", $round_id);
     $stmt->execute();
     $res = $stmt->get_result()->fetch_assoc();
     $seg_total = (float)($res['total'] ?? 0);
 
-    // Allow tiny float margin of error (99.9 - 100.1)
-    if ($seg_total < 99.9 || $seg_total > 100.1) {
+    // Use floating point comparison (allow tiny margin for 99.999...)
+    if (abs($seg_total - 100.00) > 0.001) {
         return "Cannot Start: Total Segment Weight is $seg_total%. It must be exactly 100%.";
     }
 
-    // B. Check if EACH Segment has 100 Points of Criteria
-    // Joins 'segments' and 'criteria'
-    $sql = "SELECT s.title, SUM(c.max_score) as criteria_total 
+    // D. CHECK CRITERIA POINTS (Must be exactly 100 per segment)
+    // FIX: Moved 'c.is_deleted = 0' to ON clause so segments with NO criteria are not hidden
+    $sql = "SELECT s.title, COALESCE(SUM(c.max_score), 0) as criteria_total 
             FROM segments s 
-            LEFT JOIN criteria c ON s.id = c.segment_id 
-            WHERE s.round_id = ? AND s.is_deleted = 0 AND c.is_deleted = 0
-            GROUP BY s.id 
-            HAVING criteria_total != 100.00 OR criteria_total IS NULL";
+            LEFT JOIN criteria c ON s.id = c.segment_id AND c.is_deleted = 0
+            WHERE s.round_id = ? AND s.is_deleted = 0
+            GROUP BY s.id";
+            
     $stmt2 = $conn->prepare($sql);
     $stmt2->bind_param("i", $round_id);
     $stmt2->execute();
-    $invalid_segments = $stmt2->get_result();
+    $result = $stmt2->get_result();
 
-    if ($invalid_segments->num_rows > 0) {
-        $bad_seg = $invalid_segments->fetch_assoc();
-        $bad_score = (float)($bad_seg['criteria_total'] ?? 0);
-        return "Cannot Start: Segment '{$bad_seg['title']}' has incomplete criteria ($bad_score/100 pts).";
+    if ($result->num_rows === 0) {
+        return "Cannot Start: No segments found for this round.";
+    }
+
+    while ($row = $result->fetch_assoc()) {
+        $score = (float)$row['criteria_total'];
+        if (abs($score - 100.00) > 0.001) {
+            return "Cannot Start: Segment '{$row['title']}' criteria total is $score. It must be exactly 100.";
+        }
     }
 
     return true;
@@ -205,7 +222,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         }
 
         // RULE 2: INTEGRITY CHECK (Configuration)
-        $config_msg = validateRoundConfiguration($conn, $round_id);
+        $config_msg = validateRoundConfiguration($conn, $round_id, $event_id);
         if ($config_msg !== true) throw new Exception($config_msg);
 
         // RULE 3: GATEKEEPER CHECK (Qualified Candidates)
@@ -226,27 +243,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
 // --- 5. LOCK ROUND & PROMOTE ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'lock') {
-    // Both Manager and Tabulator can lock
     $round_id = (int)$_POST['round_id'];
 
-    // --- SAFETY CHECK: Have all judges submitted? ---
+    // --- SAFETY CHECK: Judges ---
     $evt_id_q = $conn->query("SELECT event_id FROM rounds WHERE id = $round_id")->fetch_assoc();
     $event_id = $evt_id_q['event_id'];
 
-    // 1. Count Active Judges for this event
     $j_total = $conn->query("SELECT COUNT(*) as cnt FROM event_judges WHERE event_id = $event_id AND status = 'Active' AND is_deleted = 0")->fetch_assoc()['cnt'];
-    
     if ($j_total == 0) {
-        echo json_encode(['status' => 'error', 'message' => "CANNOT LOCK: No active judges found for this event."]);
+        echo json_encode(['status' => 'error', 'message' => "CANNOT LOCK: No active judges found."]);
         exit;
     }
 
-    // 2. Count Submitted Judges (using judge_round_status table)
     $j_sub = $conn->query("SELECT COUNT(*) as cnt FROM judge_round_status WHERE round_id = $round_id AND status = 'Submitted'")->fetch_assoc()['cnt'];
-
     if ($j_sub < $j_total) {
         $remaining = $j_total - $j_sub;
-        echo json_encode(['status' => 'error', 'message' => "WAIT! $remaining judge(s) have not submitted their scores yet."]);
+        echo json_encode(['status' => 'error', 'message' => "WAIT! $remaining judge(s) have not submitted scores."]);
         exit;
     }
 
@@ -255,38 +267,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         // A. Calculate Ranks
         $rankings = ScoreCalculator::calculate($round_id);
         
-        // B. Get Limit
+        // B. Context Info
         $r_info = $conn->query("SELECT qualify_count, event_id, ordering FROM rounds WHERE id = $round_id")->fetch_assoc();
         $limit = (int)$r_info['qualify_count'];
         $event_id = $r_info['event_id'];
-        $current_order = $r_info['ordering'];
 
-        // C. Clean Slate: Reset everyone to Eliminated first (Logic: Guilty until proven innocent)
-        // Only touches contestants who were part of this round (Active/Qualified)
+        // C. Clean Slate: Reset statuses
         $conn->query("UPDATE event_contestants SET status = 'Eliminated' WHERE event_id = $event_id AND status IN ('Active', 'Qualified')");
 
-        // D. Promote Top N
+        // D. INSERT SCORES & Promote Top N
+        // [FIX] Prepare statement for saving results
+        $save_stmt = $conn->prepare("INSERT INTO round_rankings (round_id, contestant_id, total_score, `rank`) VALUES (?, ?, ?, ?)");
+        
         $promoted_count = 0;
         foreach ($rankings as $row) {
-            // Using <= because rank 1, 2, 3... are best
-            if ($row['rank'] <= $limit) {
-                $cid = $row['contestant_id'] ?? 0;
-                if($cid > 0) {
-                    $conn->query("UPDATE event_contestants SET status = 'Qualified' WHERE id = $cid");
-                    $promoted_count++;
-                }
+            $cid = $row['contestant']['detail_id'] ?? $row['contestant']['id'] ?? 0; // Robust ID fetch
+            $score = (float)$row['raw_score'];
+            $rank = (int)$row['rank'];
+
+            // 1. Save to Database (The missing step!)
+            if ($cid > 0) {
+                $save_stmt->bind_param("iidi", $round_id, $cid, $score, $rank);
+                $save_stmt->execute();
+            }
+
+            // 2. Promote if qualified
+            if ($rank <= $limit && $cid > 0) {
+                $conn->query("UPDATE event_contestants SET status = 'Qualified' WHERE id = $cid");
+                $promoted_count++;
             }
         }
 
         // E. Close Round
         $conn->query("UPDATE rounds SET status = 'Completed' WHERE id = $round_id");
         
-        // F. Initialize Next Round (Optional Logic to Auto-Activate Contestants)
-        // This ensures the next round sees them as 'Active' candidates if needed, 
-        // but 'Qualified' is usually enough for the Gatekeeper check.
-
         $conn->commit();
-        echo json_encode(['status' => 'success', 'message' => "Round Locked. Top $promoted_count contestants promoted."]);
+        echo json_encode(['status' => 'success', 'message' => "Round Locked. Scores Saved. Top $promoted_count promoted."]);
 
     } catch (Exception $e) {
         $conn->rollback();

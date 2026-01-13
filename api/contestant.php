@@ -4,7 +4,6 @@
 
 require_once __DIR__ . '/../app/core/guard.php';
 requireLogin();
-// Fixed typo: removed 'Contestat Manager'
 requireRole(['Event Manager', 'Contestant Manager']); 
 require_once __DIR__ . '/../app/config/database.php';
 
@@ -30,9 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $hometown = trim($_POST['hometown']);
     $motto    = trim($_POST['motto']);
     
-    // Convert Frontend "Bust", "Waist", "Hips" inputs if sent individually, 
-    // OR parse from a string if sent as one.
-    // Handling individual inputs from the updated Modal:
+    // Inputs from Modal
     $bust  = !empty($_POST['bust']) ? (float)$_POST['bust'] : 0;
     $waist = !empty($_POST['waist']) ? (float)$_POST['waist'] : 0;
     $hips  = !empty($_POST['hips']) ? (float)$_POST['hips'] : 0;
@@ -41,7 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'create') {
         $pass = trim($_POST['password']);
         
-        // Photo is mandatory for new contestants
+        // Check photo
         if (!isset($_FILES['photo']) || $_FILES['photo']['error'] !== 0) {
             header("Location: ../public/contestants.php?error=Photo is required");
             exit();
@@ -57,10 +54,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             $hashed_pass = password_hash($pass, PASSWORD_DEFAULT);
             
-            // 1. Create User Login
-            // Matches 'users' table
-            $stmt1 = $conn->prepare("INSERT INTO users (name, email, password, role, status) VALUES (?, ?, ?, 'Contestant', 'Active')");
-            $stmt1->bind_param("sss", $name, $email, $hashed_pass);
+            // [UPDATED] Get the ID of the manager creating this account
+            $creator_id = $_SESSION['user_id'];
+
+            // 1. Create User Login (Added created_by column)
+            $stmt1 = $conn->prepare("INSERT INTO users (name, email, password, role, status, created_by) VALUES (?, ?, ?, 'Contestant', 'Active', ?)");
+            $stmt1->bind_param("sssi", $name, $email, $hashed_pass, $creator_id);
             $stmt1->execute();
             $user_id = $conn->insert_id;
 
@@ -69,14 +68,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $next_num = ($num_q->fetch_assoc()['max_num'] ?? 0) + 1;
 
             // 3. Create Profile
-            // Matches 'event_contestants' table
             $stmt2 = $conn->prepare("INSERT INTO event_contestants (user_id, event_id, contestant_number, age, height, bust, waist, hips, hometown, motto, photo, status, is_deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active', 0)");
             $stmt2->bind_param("iiidddddsss", $user_id, $event_id, $next_num, $age, $height, $bust, $waist, $hips, $hometown, $motto, $photo_name);
             $stmt2->execute();
             
             // Send Email
             require_once __DIR__ . '/../app/core/CustomMailer.php';
-            // Update this link for your environment
+            // Make sure this link is correct for your pc
             $site_link = "https://juvenal-esteban-octavalent.ngrok-free.dev/bpms_v2/public/index.php"; 
             
             $e_query = $conn->query("SELECT title FROM events WHERE id = $event_id");
@@ -98,11 +96,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // --- UPDATE EXISTING ---
     elseif ($action === 'update') {
-        $u_id = (int)$_POST['contestant_id']; // This is the 'id' from event_contestants (or user_id depending on form)
-        // Note: The form in contestants.php sends 'edit_id' which is 'id' (PK of event_contestants). 
-        // We need 'user_id' to update the 'users' table. 
+        $u_id = (int)$_POST['contestant_id']; 
         
-        // Fetch user_id from the contestant ID
         $uid_q = $conn->query("SELECT user_id FROM event_contestants WHERE id = $u_id");
         $real_user_id = $uid_q->fetch_assoc()['user_id'];
 
@@ -171,11 +166,10 @@ function uploadPhoto($file) {
     return false;
 }
 
-// PART 2: HANDLE GET ACTIONS (Approve / Reject / Archive / Restore / Delete)
+// PART 2: HANDLE GET ACTIONS
 if (isset($_GET['action']) && isset($_GET['id'])) {
     
-    $target_id = (int)$_GET['id']; // This is 'id' from event_contestants
-    // Get user_id for users table updates
+    $target_id = (int)$_GET['id'];
     $q = $conn->query("SELECT user_id, event_id FROM event_contestants WHERE id = $target_id");
     $res = $q->fetch_assoc();
     $target_user_id = $res['user_id'];
@@ -184,8 +178,7 @@ if (isset($_GET['action']) && isset($_GET['id'])) {
     $action = $_GET['action'];
     $my_id = $_SESSION['user_id'];
 
-    // --- SECURITY: Authorization Check ---
-    // Ensure the current user manages this event
+    // Security Check
     $check_auth = $conn->prepare("
         SELECT id FROM events WHERE id = ? AND manager_id = ?
         UNION
@@ -199,12 +192,8 @@ if (isset($_GET['action']) && isset($_GET['id'])) {
         exit();
     }
 
-    // --- ACTION LOGIC ---
-    
+    // Action Logic
     if ($action === 'delete') {
-        // [SOFT DELETE LAYER 2]
-        // "Permanent Delete" from UI = Hidden from all lists.
-        // Data stays in DB for integrity.
         $stmt = $conn->prepare("UPDATE event_contestants SET is_deleted = 1 WHERE id = ?");
         $stmt->bind_param("i", $target_id);
         $stmt->execute();
@@ -212,7 +201,6 @@ if (isset($_GET['action']) && isset($_GET['id'])) {
         $tab = 'archived';
 
     } elseif ($action === 'restore') {
-        // Restore from Archive
         $conn->begin_transaction();
         $conn->query("UPDATE users SET status = 'Active' WHERE id = $target_user_id");
         $conn->query("UPDATE event_contestants SET is_deleted = 0, status = 'Active' WHERE id = $target_id");
@@ -221,20 +209,16 @@ if (isset($_GET['action']) && isset($_GET['id'])) {
         $tab = 'archived';
 
     } elseif ($action === 'remove') {
-        // [SOFT DELETE LAYER 1]
-        // Move to Archive (status = Inactive)
         $stmt = $conn->prepare("UPDATE users SET status = 'Inactive' WHERE id = ?");
         $stmt->bind_param("i", $target_user_id);
         $stmt->execute();
         
-        // Also update contestant status to keep in sync
         $conn->query("UPDATE event_contestants SET status = 'Inactive' WHERE id = $target_id");
         
         $msg = "Contestant moved to archive.";
         $tab = 'active';
 
     } elseif ($action === 'approve') {
-        // Approve
         $conn->begin_transaction();
         $conn->query("UPDATE users SET status = 'Active' WHERE id = $target_user_id");
         $conn->query("UPDATE event_contestants SET status = 'Active' WHERE id = $target_id");
@@ -243,14 +227,13 @@ if (isset($_GET['action']) && isset($_GET['id'])) {
         $msg = "Application Approved";
         $tab = 'pending';
 
-        // Email Notification
+        // Notification
         require_once __DIR__ . '/../app/core/CustomMailer.php';
         $site_link = "https://juvenal-esteban-octavalent.ngrok-free.dev/bpms_v2/public/index.php";
         $u_data = $conn->query("SELECT name, email FROM users WHERE id = $target_user_id")->fetch_assoc();
         if ($u_data) sendCustomEmail($u_data['email'], "Application ACCEPTED", "<h2>Congrats {$u_data['name']}!</h2><p>Your application is accepted.</p><p><a href='$site_link'>Login</a></p>");
 
     } elseif ($action === 'reject') {
-        // Reject
         $conn->begin_transaction();
         $conn->query("UPDATE users SET status = 'Rejected' WHERE id = $target_user_id");
         $conn->query("UPDATE event_contestants SET status = 'Rejected' WHERE id = $target_id");
