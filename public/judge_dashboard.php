@@ -145,7 +145,7 @@ if ($active) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"> 
     <title>Judge Panel</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="./assets/fontawesome/css/all.min.css">
     <style>
         :root { --gold: #F59E0B; --dark: #111827; --success: #059669; --wip: #eab308; --gray: #d1d5db; }
         body { background: #f3f4f6; font-family: sans-serif; margin: 0; padding-bottom: 90px; -webkit-tap-highlight-color: transparent; }
@@ -327,6 +327,7 @@ if ($active) {
         comments: <?= json_encode($draft_comments) ?> || {} 
     };
     const roundId = <?= $round_id ?>;
+    const isLocked = <?= $is_locked ? 'true' : 'false' ?>; 
     
     let currentSegId = Object.keys(segments)[0];
     let activeCId = null;
@@ -349,6 +350,9 @@ if ($active) {
         document.getElementById('viewName').innerText = `#${cont.display_number} ${cont.name}`;
         document.getElementById('viewSegmentTitle').innerText = seg.title;
         
+        // 1. Determine if we should disable inputs
+        const disabledAttr = isLocked ? 'disabled' : ''; 
+
         let html = '';
         if(seg.criteria && seg.criteria.length > 0) {
             seg.criteria.forEach(crit => {
@@ -365,11 +369,11 @@ if ($active) {
                         <div class="input-group">
                             <input type="range" class="score-slider sync-slider" 
                                    data-crit="${crit.id}" min="0" max="${crit.max_score}" step="1" 
-                                   value="${val}" oninput="syncInputs(this, 'slider')">
+                                   value="${val}" oninput="syncInputs(this, 'slider')" ${disabledAttr}>
                                    
                             <input type="number" class="score-input crit-input sync-num" 
                                    data-crit="${crit.id}" min="0" max="${crit.max_score}" step="0.01"
-                                   value="${val}" oninput="syncInputs(this, 'number')">
+                                   value="${val}" oninput="syncInputs(this, 'number')" ${disabledAttr}>
                         </div>
                         <div class="err-msg"></div>
                     </div>`;
@@ -379,7 +383,12 @@ if ($active) {
         }
         
         document.getElementById('criteriaContainer').innerHTML = html;
-        document.getElementById('segmentComment').value = (drafts.comments[cid] && drafts.comments[cid][currentSegId]) ? drafts.comments[cid][currentSegId] : '';
+        
+        const commentBox = document.getElementById('segmentComment');
+        commentBox.value = (drafts.comments[cid] && drafts.comments[cid][currentSegId]) ? drafts.comments[cid][currentSegId] : '';
+        
+        // 4. Disable the comment box too
+        commentBox.disabled = isLocked; 
         
         // Initialize slider fills
         document.querySelectorAll('.sync-slider').forEach(s => updateSliderFill(s));

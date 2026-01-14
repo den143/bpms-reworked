@@ -10,51 +10,74 @@ class Contestant
 
     public static function getAllByManager(int $managerId, string $status, string $search = ''): array
     {
-        $db = self::db();
-        
-        $sql = "SELECT u.id, u.name, u.email, u.status, 
+        $params = [$managerId];
+        $types = "i";
+
+        // LOGIC FIX: If looking for "Active" (Official), include Qualified and Eliminated too.
+        if ($status === 'Active') {
+            $statusClause = "AND ec.status IN ('Active', 'Qualified', 'Eliminated')";
+        } else {
+            $statusClause = "AND ec.status = ?";
+            $params[] = $status;
+            $types .= "s";
+        }
+
+        $sql = "SELECT u.id, u.name, u.email, u.status as user_status, 
                        ec.status AS competition_status, 
+                       ec.id as contestant_id,
                        ec.age, ec.height, 
                        CONCAT(ec.bust, '-', ec.waist, '-', ec.hips) as vital_stats, 
                        ec.hometown, ec.motto, ec.photo, ec.event_id,
                        e.title as event_name 
-                FROM users u 
-                JOIN event_contestants ec ON u.id = ec.user_id 
+                FROM event_contestants ec 
+                JOIN users u ON ec.user_id = u.id 
                 JOIN events e ON ec.event_id = e.id 
                 WHERE e.manager_id = ? 
                   AND e.status = 'Active' 
-                  AND u.role = 'Contestant' 
-                  AND u.status = ?";
-        return self::fetchData($sql, [$managerId, $status], "is", $search);
+                  $statusClause
+                  AND ec.is_deleted = 0"; 
+
+        return self::fetchData($sql, $params, $types, $search);
     }
 
     public static function getAllByOrganizer(int $organizerId, string $status, string $search = ''): array
     {
-        
-        $sql = "SELECT u.id, u.name, u.email, u.status, 
+        $params = [$organizerId];
+        $types = "i";
+
+        // LOGIC FIX: Same here. 'Active' tab should show Qualified/Eliminated too.
+        if ($status === 'Active') {
+            $statusClause = "AND ec.status IN ('Active', 'Qualified', 'Eliminated')";
+        } else {
+            $statusClause = "AND ec.status = ?";
+            $params[] = $status;
+            $types .= "s";
+        }
+
+        $sql = "SELECT u.id, u.name, u.email, u.status as user_status, 
                        ec.status AS competition_status,
+                       ec.id as contestant_id,
                        ec.age, ec.height, 
                        CONCAT(ec.bust, '-', ec.waist, '-', ec.hips) as vital_stats,
                        ec.hometown, ec.motto, ec.photo, ec.event_id,
                        e.title as event_name 
-                FROM users u 
-                JOIN event_contestants ec ON u.id = ec.user_id 
+                FROM event_contestants ec 
+                JOIN users u ON ec.user_id = u.id 
                 JOIN events e ON ec.event_id = e.id 
                 JOIN event_teams et ON e.id = et.event_id
                 WHERE et.user_id = ? 
                   AND et.status = 'Active'
                   AND et.is_deleted = 0
                   AND e.status = 'Active' 
-                  AND u.role = 'Contestant' 
-                  AND u.status = ?";
-        return self::fetchData($sql, [$organizerId, $status], "is", $search);
+                  $statusClause
+                  AND ec.is_deleted = 0";
+
+        return self::fetchData($sql, $params, $types, $search);
     }
 
     private static function fetchData($sql, $baseParams, $baseTypes, $search) {
         $db = self::db();
         
-        $sql .= " AND ec.is_deleted = 0 "; 
-
         if (!empty($search)) {
             $sql .= " AND (u.name LIKE ? OR ec.hometown LIKE ?)";
             $baseTypes .= "ss";
@@ -62,8 +85,14 @@ class Contestant
             $baseParams[] = $searchTerm;
             $baseParams[] = $searchTerm;
         }
-        $sql .= " ORDER BY u.created_at DESC";
+        
+        $sql .= " ORDER BY ec.registered_at DESC";
+
         $stmt = $db->prepare($sql);
+        if (!$stmt) {
+            die("SQL Error: " . $db->error);
+        }
+        
         $stmt->bind_param($baseTypes, ...$baseParams);
         $stmt->execute();
         return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);

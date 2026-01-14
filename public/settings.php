@@ -40,7 +40,7 @@ if ($is_event_manager) {
             if ($row['status'] == 'Used') $total_used = $row['count'];
         }
         
-        $tickets = $conn->query("SELECT * FROM tickets WHERE event_id = $event_id ORDER BY generated_at DESC LIMIT 100")->fetch_all(MYSQLI_ASSOC);
+        $tickets = $conn->query("SELECT * FROM tickets WHERE event_id = $event_id ORDER BY generated_at DESC LIMIT 500")->fetch_all(MYSQLI_ASSOC);
     }
 
     $hist_stmt = $conn->prepare("SELECT * FROM events WHERE manager_id = ? AND is_deleted = 0 ORDER BY created_at DESC");
@@ -166,28 +166,19 @@ $me = $me_stmt->get_result()->fetch_assoc();
     <meta name="viewport" content="width=device-width, initial-scale=1.0"> 
     <title>Settings - BPMS</title>
     <link rel="stylesheet" href="./assets/css/style.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="./assets/fontawesome/css/all.min.css">
     <style>
         /* --- GLOBAL RESET --- */
         body, html { margin: 0; padding: 0; width: 100%; box-sizing: border-box; }
 
         /* --- NAVBAR STYLES --- */
         .navbar {
-            display: flex;
-            align-items: center;
-            justify-content: flex-start; /* FIX: Force Left Alignment */
-            background: white;
-            padding: 15px 30px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-            width: 100%;
+            display: flex; align-items: center; justify-content: flex-start;
+            background: white; padding: 15px 30px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05); width: 100%;
         }
         .navbar-title { font-size: 20px; font-weight: 600; color: #111827; }
-
-        /* FIX: Hide Hamburger by Default (Desktop) */
-        .toggle-btn { 
-            display: none; /* Hidden on Desktop */
-            font-size: 20px; cursor: pointer; margin-right: 15px; color: #1f2937; 
-        }
+        .toggle-btn { display: none; font-size: 20px; cursor: pointer; margin-right: 15px; color: #1f2937; }
 
         /* --- DESKTOP LAYOUT --- */
         .settings-container { display: flex; gap: 30px; align-items: flex-start; margin-top: 30px; }
@@ -229,7 +220,7 @@ $me = $me_stmt->get_result()->fetch_assoc();
         .stat-num { font-size: 24px; font-weight: bold; color: #1f2937; } .stat-label { font-size: 12px; color: #6b7280; text-transform: uppercase; }
         
         .btn-generate { background: #3b82f6; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size:13px; }
-        .btn-print { background: #4b5563; color: white; text-decoration: none; padding: 8px 15px; border-radius: 6px; font-size: 13px; display: inline-flex; align-items: center; gap: 5px; cursor: pointer; border: none; }
+        .btn-print { background: #111827; color: white; text-decoration: none; padding: 8px 15px; border-radius: 6px; font-size: 13px; display: inline-flex; align-items: center; gap: 5px; cursor: pointer; border: none; font-weight: bold; }
         .btn-clear { background: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; padding: 8px 15px; border-radius: 6px; cursor: pointer; font-size: 13px; }
         
         .ticket-scroll-area { max-height: 400px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 6px; }
@@ -254,9 +245,46 @@ $me = $me_stmt->get_result()->fetch_assoc();
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         .toggle-password { position: absolute; right: 10px; top: 35px; cursor: pointer; color: #9ca3af; }
 
-        /* ========================================= */
-        /* === MOBILE RESPONSIVE FIXES === */
-        /* ========================================= */
+        /* --- PRINT ONLY STYLES --- */
+        @media print {
+            .sidebar, .navbar, .settings-sidebar, .card-header button, .no-print, .toast-container { display: none !important; }
+            .settings-content { margin: 0; padding: 0; }
+            .card { box-shadow: none; border: none; padding: 0; margin: 0; }
+            body, html { background: white; height: auto; overflow: visible; }
+            .main-wrapper, .content-area, .container, .settings-container { display: block; width: 100%; height: auto; margin: 0; padding: 0; }
+            .card:not(.active), .stats-grid, .ticket-scroll-area, form { display: none !important; }
+
+            #printable-tickets {
+                display: grid !important;
+                grid-template-columns: repeat(3, 1fr);
+                gap: 15px; padding: 10px; width: 100%;
+            }
+
+            .ticket-card {
+                border: 2px dashed #000; padding: 10px; text-align: center;
+                height: 160px; page-break-inside: avoid;
+                display: flex; flex-direction: column; justify-content: center;
+                position: relative; background: white;
+            }
+
+            .t-header { font-size: 12pt; font-weight: 900; text-transform: uppercase; margin-bottom: 5px; line-height: 1.1; }
+            .t-venue { font-size: 9pt; margin-bottom: 10px; }
+            .t-code-box { 
+                border: 2px solid #000; display: inline-block; padding: 5px 15px; 
+                font-size: 16pt; font-weight: bold; letter-spacing: 2px;
+                margin: 0 auto; background: #f3f4f6; -webkit-print-color-adjust: exact; print-color-adjust: exact;
+            }
+            .t-admit { font-size: 7pt; text-transform: uppercase; margin-top: 8px; font-weight: bold; letter-spacing: 1px; }
+            .t-watermark {
+                position: absolute; top: 50%; left: 50%;
+                transform: translate(-50%, -50%) rotate(-20deg);
+                font-size: 30pt; color: rgba(0,0,0,0.05);
+                z-index: 0; font-weight: bold; pointer-events: none;
+            }
+        }
+        #printable-tickets { display: none; }
+
+        /* Mobile Fixes */
         .sidebar-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); backdrop-filter: blur(2px); z-index: 999; display: none; }
         .sidebar-overlay.active { display: block; }
 
@@ -264,19 +292,9 @@ $me = $me_stmt->get_result()->fetch_assoc();
             html, body { height: auto !important; overflow-y: auto !important; -webkit-overflow-scrolling: touch; }
             .content-area { overflow: visible !important; height: auto !important; padding: 0 !important; }
             .main-wrapper { height: auto !important; overflow: visible !important; display: block !important; margin-left: 0 !important; width: 100% !important; }
-
-            /* FIX: Show Hamburger on Mobile */
             .toggle-btn { display: flex; }
-
-            /* Sidebar Animation */
-            .sidebar {
-                position: fixed !important; top: 0; left: 0;
-                width: 260px; height: 100vh;
-                z-index: 1000; transform: translateX(-100%); transition: transform 0.3s ease-in-out;
-            }
+            .sidebar { position: fixed !important; top: 0; left: 0; width: 260px; height: 100vh; z-index: 1000; transform: translateX(-100%); transition: transform 0.3s ease-in-out; }
             .sidebar.active { transform: translateX(0); }
-
-            /* Layout Fixes */
             .settings-container { flex-direction: column; gap: 20px; padding: 15px; }
             .settings-sidebar { width: 100%; margin-bottom: 0; }
             .navbar { padding: 15px 20px; }
@@ -294,7 +312,7 @@ $me = $me_stmt->get_result()->fetch_assoc();
         <?php require_once __DIR__ . '/../app/views/partials/sidebar.php'; ?>
 
         <div class="content-area">
-            <div class="navbar">
+            <div class="navbar no-print">
                 <div class="toggle-btn" onclick="toggleSidebar()"><i class="fas fa-bars"></i></div>
                 <div class="navbar-title">Settings</div>
             </div>
@@ -304,7 +322,7 @@ $me = $me_stmt->get_result()->fetch_assoc();
 
                 <div class="settings-container">
                     
-                    <div class="settings-sidebar">
+                    <div class="settings-sidebar no-print">
                         <?php if ($is_event_manager): ?>
                             <a href="?tab=event_details" class="tab-btn <?= $active_tab == 'event_details' ? 'active' : '' ?>"><i class="fas fa-sliders-h"></i> Event Config</a>
                             <a href="?tab=tickets" class="tab-btn <?= $active_tab == 'tickets' ? 'active' : '' ?>"><i class="fas fa-ticket-alt"></i> Tickets</a>
@@ -332,16 +350,21 @@ $me = $me_stmt->get_result()->fetch_assoc();
                             </div>
 
                             <div class="card <?= $active_tab == 'tickets' ? 'active' : '' ?>">
-                                <div class="card-header"><div><h3>Tickets</h3></div><?php if ($active_event): ?><button class="btn-print" onclick="printTickets()"><i class="fas fa-print"></i> Print</button><?php endif; ?></div>
+                                <div class="card-header">
+                                    <div><h3>Tickets</h3></div>
+                                    <?php if ($active_event): ?>
+                                        <button class="btn-print no-print" onclick="window.print()"><i class="fas fa-print"></i> Print Cards</button>
+                                    <?php endif; ?>
+                                </div>
                                 <?php if (!$active_event): ?><div style="text-align:center; padding:20px;">No event.</div><?php else: ?>
-                                    <div class="stats-grid">
+                                    <div class="stats-grid no-print">
                                         <div class="stat-box"><div class="stat-num" style="color:#059669;"><?= $total_unused ?></div><div class="stat-label">Unused</div></div>
                                         <div class="stat-box"><div class="stat-num" style="color:#dc2626;"><?= $total_used ?></div><div class="stat-label">Used</div></div>
                                     </div>
-                                    <div style="margin-bottom:20px; background:#f9fafb; padding:15px; border-radius:8px;">
+                                    <div style="margin-bottom:20px; background:#f9fafb; padding:15px; border-radius:8px;" class="no-print">
                                         <form action="../api/tickets.php" method="POST" style="display:flex; gap:10px; margin-bottom:10px;" onsubmit="showLoading()">
                                             <input type="hidden" name="action" value="generate"><input type="hidden" name="event_id" value="<?= $active_event['id'] ?>">
-                                            <input type="number" name="quantity" class="form-control" value="50" min="1" max="500" style="width:80px;">
+                                            <input type="number" name="quantity" class="form-control" placeholder="25" min="1" max="500" style="width:80px;">
                                             <button type="submit" class="btn-generate">Generate</button>
                                         </form>
                                         <form action="../api/tickets.php" method="POST" onsubmit="if(confirm('Delete unused tickets?')){ showLoading(); return true; } else { return false; }">
@@ -349,7 +372,7 @@ $me = $me_stmt->get_result()->fetch_assoc();
                                             <button type="submit" class="btn-clear" style="width:100%;">Clear Unused</button>
                                         </form>
                                     </div>
-                                    <div class="ticket-scroll-area">
+                                    <div class="ticket-scroll-area no-print">
                                         <table class="ticket-table" id="printableTable"><thead><tr><th>#</th><th>Code</th><th>Status</th></tr></thead><tbody><?php foreach ($tickets as $i => $t): ?><tr><td><?= $i+1 ?></td><td><?= htmlspecialchars($t['ticket_code']) ?></td><td><span class="<?= ($t['status'] == 'Used') ? 'status-used' : 'status-unused' ?>"><?= $t['status'] ?></span></td></tr><?php endforeach; ?></tbody></table>
                                     </div>
                                 <?php endif; ?>
@@ -367,8 +390,31 @@ $me = $me_stmt->get_result()->fetch_assoc();
                             </div>
 
                             <div class="card <?= $active_tab == 'history' ? 'active' : '' ?>">
-                                <div class="card-header"><div><h3>Switch Event</h3></div><button onclick="openCreateModal()" style="background:#1f2937; color:white; border:none; padding:5px 10px; border-radius:6px;">+ New</button></div>
-                                <div style="overflow-x:auto;"><table class="data-table"><thead><tr><th>Title</th><th>Status</th><th>Action</th></tr></thead><tbody><?php foreach ($all_events as $evt): $is_curr = ($evt['status'] === 'Active'); ?><tr><td><?= htmlspecialchars($evt['title']) ?></td><td><span class="badge <?= $is_curr ? 'badge-active' : 'badge-inactive' ?>"><?= $evt['status'] ?></span></td><td><?php if (!$is_curr): ?><button onclick="openSwitchModal(<?= $evt['id'] ?>)" style="color:#2563eb; border:none; background:none; font-weight:bold;">Switch</button><?php else: ?>Active<?php endif; ?></td></tr><?php endforeach; ?></tbody></table></div>
+                                <div class="card-header">
+                                    <div><h3>Switch Event</h3></div>
+                                    <button onclick="openCreateModal()" style="background:#1f2937; color:white; border:none; padding:5px 10px; border-radius:6px;">+ New</button>
+                                </div>
+                                <div style="overflow-x:auto;">
+                                    <table class="data-table">
+                                        <thead><tr><th>Title</th><th>Status</th><th>Action</th></tr></thead>
+                                        <tbody>
+                                            <?php foreach ($all_events as $evt): $is_curr = ($evt['status'] === 'Active'); ?>
+                                            <tr>
+                                                <td><?= htmlspecialchars($evt['title']) ?></td>
+                                                <td><span class="badge <?= $is_curr ? 'badge-active' : 'badge-inactive' ?>"><?= $evt['status'] ?></span></td>
+                                                <td>
+                                                    <?php if (!$is_curr): ?>
+                                                        <button onclick="openSwitchModal(<?= $evt['id'] ?>)" style="color:#2563eb; border:none; background:none; font-weight:bold;">Switch</button>
+                                                        <button onclick="openRemoveModal(<?= $evt['id'] ?>)" style="color:#dc2626; border:none; background:none; font-weight:bold; margin-left:10px;">Remove</button>
+                                                    <?php else: ?>
+                                                        Active
+                                                    <?php endif; ?>
+                                                </td>
+                                            </tr>
+                                            <?php endforeach; ?>
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
                         <?php endif; ?>
 
@@ -387,6 +433,28 @@ $me = $me_stmt->get_result()->fetch_assoc();
             </div>
         </div>
     </div>
+
+    <?php if ($active_event && !empty($tickets)): ?>
+    <div id="printable-tickets">
+        <?php foreach($tickets as $t): ?>
+            <div class="ticket-card">
+                <div class="t-watermark">ADMIT ONE</div>
+                
+                <div class="t-header"><?= htmlspecialchars($active_event['title']) ?></div>
+                <div class="t-venue"><?= htmlspecialchars($active_event['venue']) ?></div>
+                <div style="font-size: 8pt; margin-bottom: 5px;"><?= date('F j, Y', strtotime($active_event['event_date'])) ?></div>
+                
+                <div>
+                    <div class="t-code-box"><?= htmlspecialchars($t['ticket_code']) ?></div>
+                </div>
+
+                <div class="t-admit">
+                    <i class="fas fa-star" style="font-size:8px;"></i> OFFICIAL TICKET <i class="fas fa-star" style="font-size:8px;"></i>
+                </div>
+            </div>
+        <?php endforeach; ?>
+    </div>
+    <?php endif; ?>
 
     <?php if ($is_event_manager): ?>
         <div id="createModal" class="modal-overlay">
@@ -414,7 +482,7 @@ $me = $me_stmt->get_result()->fetch_assoc();
         <div id="removeModal" class="modal-overlay">
             <div class="modal-content" style="border-top:5px solid #dc2626;">
                 <h3 class="modal-title" style="color:#dc2626;">Remove Event?</h3>
-                <div style="background:#fef2f2; padding:15px; margin-bottom:20px; color:#991b1b;">Archiving <b id="removeTargetName"></b> will hide data.</div>
+                <div style="background:#fef2f2; padding:15px; margin-bottom:20px; color:#991b1b;">Archiving this event will hide its data.</div>
                 <form method="POST" onsubmit="showLoading()">
                     <input type="hidden" name="remove_event" value="1"><input type="hidden" name="event_id" id="removeTargetId">
                     <div class="form-group"><input type="password" name="password_check" class="form-control" placeholder="Password" required></div>
@@ -443,15 +511,6 @@ $me = $me_stmt->get_result()->fetch_assoc();
         function openCreateModal() { document.getElementById('createModal').style.display = 'flex'; }
         function openSwitchModal(id) { document.getElementById('switchTargetId').value = id; document.getElementById('switchModal').style.display = 'flex'; }
         function openRemoveModal(id) { document.getElementById('removeTargetId').value = id; document.getElementById('removeModal').style.display = 'flex'; }
-        function printTickets() {
-            var divToPrint = document.getElementById("printableTable");
-            var newWin = window.open("");
-            newWin.document.write("<html><head><title>Tickets</title></head><body>");
-            newWin.document.write(divToPrint.outerHTML);
-            newWin.document.write("</body></html>");
-            newWin.print();
-            newWin.close();
-        }
         <?php endif; ?>
         
         function showToast(message, type = 'success') {

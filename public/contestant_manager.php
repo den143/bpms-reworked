@@ -44,7 +44,7 @@ $my_events = $evt_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     <meta charset="UTF-8">
     <title>Contestant Manager - BPMS</title>
     <link rel="stylesheet" href="./assets/css/style.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="./assets/fontawesome/css/all.min.css">
     <style>
         .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
         .header-actions { display: flex; gap: 10px; }

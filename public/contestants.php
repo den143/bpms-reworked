@@ -56,7 +56,7 @@ $my_events = $evt_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Manage Contestants - BPMS</title>
     <link rel="stylesheet" href="./assets/css/style.css?v=4">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="./assets/fontawesome/css/all.min.css">
 </head>
 <body>
 
@@ -120,8 +120,10 @@ $my_events = $evt_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
                     <div class="contestant-grid">
                         <?php foreach ($contestants as $c): ?>
                             <div class="contestant-card">
-                                <img src="./assets/uploads/contestants/<?= htmlspecialchars($c['photo']) ?>" alt="Photo" class="card-img" onerror="this.src='./assets/images/default_user.png'">
-                                
+                                <img src="./assets/uploads/contestants/<?= htmlspecialchars($c['photo']) ?>" 
+                                    alt="Photo" 
+                                    class="card-img" 
+                                    onerror="this.onerror=null; this.src='./assets/images/default_user.png';">                                
                                 <div class="card-body">
                                     <div class="card-title"><?= htmlspecialchars($c['name']) ?></div>
                                     <div class="card-subtitle"><?= htmlspecialchars($c['hometown']) ?></div>
@@ -140,18 +142,18 @@ $my_events = $evt_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
                                         <button class="icon-btn btn-view" onclick='openViewModal(<?= json_encode($c) ?>)' title="View Application Details">
                                             <i class="fas fa-eye"></i>
                                         </button>
-                                        <a href="../api/contestant.php?action=approve&id=<?= $c['id'] ?>" class="icon-btn btn-approve" onclick="return confirm('Approve this candidate?');" title="Approve">
+                                        <a href="../api/contestant.php?action=approve&id=<?= $c['contestant_id'] ?>" class="icon-btn btn-approve" onclick="return confirm('Approve this candidate?');" title="Approve">
                                             <i class="fas fa-check"></i>
                                         </a>
-                                        <a href="../api/contestant.php?action=reject&id=<?= $c['id'] ?>" class="icon-btn btn-reject" onclick="return confirm('Reject this application?');" title="Reject">
+                                        <a href="../api/contestant.php?action=reject&id=<?= $c['contestant_id'] ?>" class="icon-btn btn-reject" onclick="return confirm('Reject this application?');" title="Reject">
                                             <i class="fas fa-times"></i>
                                         </a>
                                     
                                     <?php elseif ($view === 'archived'): ?>
-                                        <a href="../api/contestant.php?action=restore&id=<?= $c['id'] ?>" class="icon-btn btn-restore" onclick="return confirm('Restore this contestant?');" title="Restore">
+                                        <a href="../api/contestant.php?action=restore&id=<?= $c['contestant_id'] ?>" class="icon-btn btn-restore" onclick="return confirm('Restore this contestant?');" title="Restore">
                                             <i class="fas fa-undo"></i>
                                         </a>
-                                        <a href="../api/contestant.php?action=delete&id=<?= $c['id'] ?>" class="icon-btn btn-delete" onclick="return confirm('PERMANENTLY REMOVE?\n\nThey will disappear from the list completely.');" title="Delete Permanently">
+                                        <a href="../api/contestant.php?action=delete&id=<?= $c['contestant_id'] ?>" class="icon-btn btn-delete" onclick="return confirm('PERMANENTLY REMOVE?\n\nThey will disappear from the list completely.');" title="Delete Permanently">
                                             <i class="fas fa-trash"></i>
                                         </a>
                                     
@@ -176,7 +178,7 @@ $my_events = $evt_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
                                             </button>
                                         </form>
 
-                                        <a href="../api/contestant.php?action=remove&id=<?= $c['id'] ?>" class="icon-btn btn-archive" onclick="return confirm('Archive this contestant?');" title="Archive">
+                                        <a href="../api/contestant.php?action=remove&id=<?= $c['contestant_id'] ?>" class="icon-btn btn-archive" onclick="return confirm('Archive this contestant?');" title="Archive">
                                             <i class="fas fa-archive"></i>
                                         </a>
                                     <?php endif; ?>

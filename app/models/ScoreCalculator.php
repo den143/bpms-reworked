@@ -47,7 +47,7 @@ class ScoreCalculator {
         $judge_count = count($judge_ids);
 
         // 4. Fetch Contestants (Applying the Gatekeeper)
-        $c_sql = "SELECT u.id as user_id, ec.id as detail_id, u.name, ec.contestant_number, ec.photo 
+        $c_sql = "SELECT u.id as user_id, ec.id as detail_id, u.name, ec.contestant_number, ec.photo, ec.hometown 
                   FROM users u
                   JOIN event_contestants ec ON u.id = ec.user_id
                   WHERE ec.event_id = $event_id 

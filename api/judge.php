@@ -12,9 +12,8 @@ function resetChairman($conn, $event_id) {
     $stmt->execute();
 }
 
-// HELPER: FAST INTERNET CHECK (New)
+// HELPER: FAST INTERNET CHECK
 function hasInternetConnection() {
-    // Try to connect to Google's port 80 for just 3 seconds
     $connected = @fsockopen("www.google.com", 80, $errno, $errstr, 3);
     if ($connected) {
         fclose($connected);
@@ -57,9 +56,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
         if ($res->num_rows > 0) {
             // Update Existing
-            $judge_id = $res->fetch_assoc()['id'];
+            $existingUser = $res->fetch_assoc();
+            $judge_id = $existingUser['id'];
+            
+            // SECURITY: Ensure we are not hijacking an admin account
+            // (Optional strict check, good practice)
+            // if ($existingUser['role'] === 'Event Manager') throw new Exception("Cannot add Event Manager as Judge");
+
             $hashed_pass = password_hash($pass, PASSWORD_DEFAULT);
-            $updateUser = $conn->prepare("UPDATE users SET name = ?, password = ? WHERE id = ?");
+            // Force status to Active (in case they were previously archived)
+            $updateUser = $conn->prepare("UPDATE users SET name = ?, password = ?, status = 'Active' WHERE id = ?");
             $updateUser->bind_param("ssi", $name, $hashed_pass, $judge_id);
             $updateUser->execute();
             $msg_prefix = "Existing account updated & "; 
@@ -94,6 +100,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         }
 
         // *** CRITICAL STEP: SAVE TO DATABASE NOW ***
+        // This ensures the Judge is saved even if the email fails later.
         $conn->commit();
 
     } catch (Exception $e) {
@@ -103,15 +110,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 
     // --- STEP B: EMAIL NOTIFICATION ---
-    // The database transaction is closed. We are now safe to try emailing.
+    // The Judge is already saved. We try to email, but we won't wait/check for internet first.
     
     try {
-        // 1. FAST CHECK: Do we even have internet?
-        if (!hasInternetConnection()) {
-            throw new Exception("No Internet Connection");
-        }
+        // REMOVED: if (!hasInternetConnection()) ... (This removes the 3-second delay)
 
-        // 2. If yes, load mailer and send
         require_once __DIR__ . '/../app/core/CustomMailer.php';
         
         $site_link = "https://juvenal-esteban-octavalent.ngrok-free.dev/bpms_v2/public/index.php"; 
@@ -134,17 +137,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             <p><a href='$site_link' style='background:#F59E0B; color:white; padding:10px 20px; text-decoration:none;'>Login Now</a></p>
         ";
 
+        // This will try to send. If no SMTP is set up, it might fail instantly or log an error.
         queueEmail($email, $subject, $body);
 
-        // SUCCESS: Saved AND Emailed
         header("Location: ../public/judges.php?success=" . urlencode($msg));
 
     } catch (Exception $e) {
-        // ERROR HANDLER: Internet was cut off
-        // We know the judge is already saved (conn->commit was called earlier).
-        // So we redirect with a WARNING instead of an error.
-        
-        $warningMsg = "Judge was saved successfully, BUT the invitation email failed (Network Error). Please use the 'Resend' button.";
+        // If email fails, we just warn the user.
+        $warningMsg = "Judge saved successfully. (Email notification could not be sent: " . $e->getMessage() . ")";
         header("Location: ../public/judges.php?warning=" . urlencode($warningMsg));
     }
     exit();
@@ -152,7 +152,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
 // --- 2. UPDATE JUDGE (Edit details) ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update') {
-    // (Existing Update Logic - No changes needed here)
+    // (Existing Update Logic - No changes needed here, just kept for completeness)
     $link_id  = (int)$_POST['link_id'];
     $name     = trim($_POST['name']);
     $email    = trim($_POST['email']);
@@ -201,33 +201,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     exit();
 }
 
-// --- 3. REMOVE / RESTORE / DELETE ---
+// --- 3. REMOVE / RESTORE / DELETE (FIXED) ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && isset($_POST['id'])) {
-    // (Existing Delete Logic - No changes needed here)
     $link_id = (int)$_POST['id'];
     $action  = $_POST['action'];
 
-    if ($action === 'delete') {
-        $stmt = $conn->prepare("UPDATE event_judges SET is_deleted = 1 WHERE id = ?");
-        $stmt->bind_param("i", $link_id);
-        $view = 'archived';
-        $msg = "Judge permanently removed from list.";
-    } elseif ($action === 'restore') {
-        $stmt = $conn->prepare("UPDATE event_judges SET status = 'Active', is_deleted = 0 WHERE id = ?");
-        $stmt->bind_param("i", $link_id);
-        $view = 'archived';
-        $msg = "Judge restored successfully.";
-    } else {
-        $stmt = $conn->prepare("UPDATE event_judges SET status = 'Inactive' WHERE id = ?");
-        $stmt->bind_param("i", $link_id);
-        $view = 'active';
-        $msg = "Judge archived.";
-    }
-    
-    if ($stmt->execute()) {
+    $conn->begin_transaction();
+    try {
+        // 1. FETCH USER ID (Needed to update the 'users' table)
+        $q = $conn->query("SELECT judge_id FROM event_judges WHERE id = $link_id");
+        if ($q->num_rows === 0) {
+             throw new Exception("Judge not found in event list");
+        }
+        $target_user_id = $q->fetch_assoc()['judge_id'];
+
+        if ($action === 'delete') {
+            // Update Link
+            $conn->query("UPDATE event_judges SET is_deleted = 1 WHERE id = $link_id");
+            
+            // SYNC: Disable User Login
+            $conn->query("UPDATE users SET status = 'Inactive' WHERE id = $target_user_id");
+
+            $view = 'archived';
+            $msg = "Judge permanently removed from list.";
+
+        } elseif ($action === 'restore') {
+            // Update Link
+            $conn->query("UPDATE event_judges SET status = 'Active', is_deleted = 0 WHERE id = $link_id");
+            
+            // SYNC: Re-enable User Login
+            $conn->query("UPDATE users SET status = 'Active' WHERE id = $target_user_id");
+
+            $view = 'archived';
+            $msg = "Judge restored successfully.";
+
+        } else {
+            // Archive
+            $conn->query("UPDATE event_judges SET status = 'Inactive' WHERE id = $link_id");
+
+            // SYNC: Disable User Login
+            $conn->query("UPDATE users SET status = 'Inactive' WHERE id = $target_user_id");
+
+            $view = 'active';
+            $msg = "Judge archived.";
+        }
+        
+        $conn->commit();
         header("Location: ../public/judges.php?view=$view&success=" . urlencode($msg));
-    } else {
-        header("Location: ../public/judges.php?error=Action failed");
+
+    } catch (Exception $e) {
+        $conn->rollback();
+        header("Location: ../public/judges.php?error=" . urlencode($e->getMessage()));
     }
     exit();
 }

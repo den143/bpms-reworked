@@ -235,7 +235,7 @@ if (isset($_GET['action']) && isset($_GET['id'])) {
 
     } elseif ($action === 'reject') {
         $conn->begin_transaction();
-        $conn->query("UPDATE users SET status = 'Rejected' WHERE id = $target_user_id");
+        $conn->query("UPDATE users SET status = 'Inactive' WHERE id = $target_user_id");
         $conn->query("UPDATE event_contestants SET status = 'Rejected' WHERE id = $target_id");
         $conn->commit();
 

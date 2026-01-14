@@ -46,7 +46,7 @@ if ($active_event) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Manage Awards - BPMS</title>
     <link rel="stylesheet" href="./assets/css/style.css?v=9">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="./assets/fontawesome/css/all.min.css">
     <style>
         .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
         .btn-add { background-color: #F59E0B; color: white; padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }

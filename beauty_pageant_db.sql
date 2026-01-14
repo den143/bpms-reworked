@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Jan 13, 2026 at 04:26 PM
+-- Generation Time: Jan 14, 2026 at 11:11 AM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -39,7 +39,10 @@ CREATE TABLE `audience_votes` (
 --
 
 INSERT INTO `audience_votes` (`id`, `ticket_id`, `contestant_id`, `voted_at`) VALUES
-(1, 2, 1, '2026-01-13 10:20:54');
+(1, 2, 1, '2026-01-13 10:20:54'),
+(2, 3, 3, '2026-01-13 16:47:39'),
+(3, 4, 3, '2026-01-13 16:48:07'),
+(4, 5, 3, '2026-01-13 16:48:32');
 
 --
 -- Triggers `audience_votes`
@@ -99,7 +102,8 @@ INSERT INTO `awards` (`id`, `event_id`, `title`, `description`, `category_type`,
 (3, 1, 'Miss People\'s Choice', 'Awarded to the contestant with the highest public vote', 'Minor', 'Audience_Vote', NULL, NULL, 'Active', 0, '2026-01-13 06:14:59'),
 (4, 1, 'Best in Production Number', 'Awarded to the top scorer in the Production Number segment.', 'Minor', 'Highest_Segment', NULL, 1, 'Active', 0, '2026-01-13 06:15:56'),
 (5, 1, 'Best in Preliminary Round', 'Awarded to the contestant with the highest preliminary score.', 'Minor', 'Highest_Round', 1, NULL, 'Active', 0, '2026-01-13 06:18:18'),
-(6, 1, 'Best in Semi-Final Round', 'Awarded to the contestant with the highest semi-final score.', 'Minor', 'Highest_Round', 2, NULL, 'Active', 0, '2026-01-13 12:33:24');
+(6, 1, 'Best in Semi-Final Round', 'Awarded to the contestant with the highest semi-final score.', 'Minor', 'Highest_Round', 2, NULL, 'Active', 0, '2026-01-13 12:33:24'),
+(7, 1, 'Mutya San Old Rizal', 'Official winner of the Mutya San Old Rizal', 'Major', 'Highest_Round', 3, NULL, 'Active', 0, '2026-01-13 16:02:51');
 
 -- --------------------------------------------------------
 
@@ -213,7 +217,17 @@ INSERT INTO `email_queue` (`id`, `recipient_email`, `subject`, `body`, `status`,
 (4, 'trisha@gmail.com', 'Official Contestant Registration', '<h2>Welcome, Trisha Mae Gonzales!</h2><p>You have been registered for <b>Mutya San Old Rizal</b> as Contestant #5.</p><div style=\'background:#f3f4f6; padding:15px;\'><strong>Credentials:</strong><br>Email: trisha@gmail.com<br>Password: trisha</div><p><a href=\'https://juvenal-esteban-octavalent.ngrok-free.dev/bpms_v2/public/index.php\'>Login Now</a></p>', 'sent', 1, '2026-01-12 17:26:33', '2026-01-12 17:26:38'),
 (5, 'alyssa@gmail.com', 'Official Contestant Registration', '<h2>Welcome, Alyssa Montoya!</h2><p>You have been registered for <b>Mutya San Old Rizal</b> as Contestant #6.</p><div style=\'background:#f3f4f6; padding:15px;\'><strong>Credentials:</strong><br>Email: alyssa@gmail.com<br>Password: alyssa</div><p><a href=\'https://juvenal-esteban-octavalent.ngrok-free.dev/bpms_v2/public/index.php\'>Login Now</a></p>', 'sent', 1, '2026-01-12 17:28:02', '2026-01-12 17:28:06'),
 (6, 'francine@gmail.com', 'Official Contestant Registration', '<h2>Welcome, Francine Mae Navarro!</h2><p>You have been registered for <b>Mutya San Old Rizal</b> as Contestant #7.</p><div style=\'background:#f3f4f6; padding:15px;\'><strong>Credentials:</strong><br>Email: francine@gmail.com<br>Password: francine</div><p><a href=\'https://juvenal-esteban-octavalent.ngrok-free.dev/bpms_v2/public/index.php\'>Login Now</a></p>', 'sent', 1, '2026-01-12 17:29:50', '2026-01-12 17:29:54'),
-(7, 'fourthemail936@gmail.com', 'Official Contestant Registration', '<h2>Welcome, Nicole Patrice Uy!</h2><p>You have been registered for <b>Mutya San Old Rizal</b> as Contestant #8.</p><div style=\'background:#f3f4f6; padding:15px;\'><strong>Credentials:</strong><br>Email: fourthemail936@gmail.com<br>Password: nicole</div><p><a href=\'https://juvenal-esteban-octavalent.ngrok-free.dev/bpms_v2/public/index.php\'>Login Now</a></p>', 'sent', 1, '2026-01-12 17:33:47', '2026-01-12 17:33:53');
+(7, 'fourthemail936@gmail.com', 'Official Contestant Registration', '<h2>Welcome, Nicole Patrice Uy!</h2><p>You have been registered for <b>Mutya San Old Rizal</b> as Contestant #8.</p><div style=\'background:#f3f4f6; padding:15px;\'><strong>Credentials:</strong><br>Email: fourthemail936@gmail.com<br>Password: nicole</div><p><a href=\'https://juvenal-esteban-octavalent.ngrok-free.dev/bpms_v2/public/index.php\'>Login Now</a></p>', 'sent', 1, '2026-01-12 17:33:47', '2026-01-12 17:33:53'),
+(8, 'camille@gmail.com', 'Team Assignment: Judge Coordinator for UEP Beauty Pageant', '\r\n            <h2>Welcome, Camille Rose Bautista!</h2>\r\n            <p>You have been assigned as a <b>Judge Coordinator</b> for <b>UEP Beauty Pageant</b>.</p>\r\n            \r\n            <div style=\'background:#f3f4f6; padding:15px; border-radius:8px; border:1px solid #ddd; margin:20px 0;\'>\r\n                <strong>Your Login Credentials:</strong><br>\r\n                Email: <b>camille@gmail.com</b><br>\r\n                Password: <b>camille</b>\r\n            </div>\r\n\r\n            <p>Please login to your dashboard to start managing your tasks:</p>\r\n            <p><a href=\'https://juvenal-esteban-octavalent.ngrok-free.dev/bpms_v2/public/index.php\' style=\'background:#F59E0B; color:white; padding:10px 20px; text-decoration:none; border-radius:5px;\'>Login to Dashboard</a></p>\r\n        ', 'sent', 1, '2026-01-14 05:13:05', '2026-01-14 05:13:09'),
+(9, 'mark@gmail.com', 'Team Assignment: Contestant Manager for UEP Beauty Pageant', '\r\n            <h2>Welcome, Mark Anthony Robles!</h2>\r\n            <p>You have been assigned as a <b>Contestant Manager</b> for <b>UEP Beauty Pageant</b>.</p>\r\n            \r\n            <div style=\'background:#f3f4f6; padding:15px; border-radius:8px; border:1px solid #ddd; margin:20px 0;\'>\r\n                <strong>Your Login Credentials:</strong><br>\r\n                Email: <b>mark@gmail.com</b><br>\r\n                Password: <b>mark</b>\r\n            </div>\r\n\r\n            <p>Please login to your dashboard to start managing your tasks:</p>\r\n            <p><a href=\'https://juvenal-esteban-octavalent.ngrok-free.dev/bpms_v2/public/index.php\' style=\'background:#F59E0B; color:white; padding:10px 20px; text-decoration:none; border-radius:5px;\'>Login to Dashboard</a></p>\r\n        ', 'sent', 1, '2026-01-14 05:13:53', '2026-01-14 05:13:58'),
+(10, 'joel@gmail.com', 'Team Assignment: Tabulator for UEP Beauty Pageant', '\r\n            <h2>Welcome, Joel Vincent Ramos!</h2>\r\n            <p>You have been assigned as a <b>Tabulator</b> for <b>UEP Beauty Pageant</b>.</p>\r\n            \r\n            <div style=\'background:#f3f4f6; padding:15px; border-radius:8px; border:1px solid #ddd; margin:20px 0;\'>\r\n                <strong>Your Login Credentials:</strong><br>\r\n                Email: <b>joel@gmail.com</b><br>\r\n                Password: <b>joel</b>\r\n            </div>\r\n\r\n            <p>Please login to your dashboard to start managing your tasks:</p>\r\n            <p><a href=\'https://juvenal-esteban-octavalent.ngrok-free.dev/bpms_v2/public/index.php\' style=\'background:#F59E0B; color:white; padding:10px 20px; text-decoration:none; border-radius:5px;\'>Login to Dashboard</a></p>\r\n        ', 'sent', 1, '2026-01-14 05:15:04', '2026-01-14 05:15:08'),
+(11, 'liza@gmail.com', 'Team Assignment: Judge Coordinator for UEP Beauty Pageant', '\r\n            <h2>Welcome, Dr. Liza Mae Navarro!</h2>\r\n            <p>You have been assigned as a <b>Judge Coordinator</b> for <b>UEP Beauty Pageant</b>.</p>\r\n            \r\n            <div style=\'background:#f3f4f6; padding:15px; border-radius:8px; border:1px solid #ddd; margin:20px 0;\'>\r\n                <strong>Your Login Credentials:</strong><br>\r\n                Email: <b>liza@gmail.com</b><br>\r\n                Password: <b>liza</b>\r\n            </div>\r\n\r\n            <p>Please login to your dashboard to start managing your tasks:</p>\r\n            <p><a href=\'https://juvenal-esteban-octavalent.ngrok-free.dev/bpms_v2/public/index.php\' style=\'background:#F59E0B; color:white; padding:10px 20px; text-decoration:none; border-radius:5px;\'>Login to Dashboard</a></p>\r\n        ', 'sent', 1, '2026-01-14 05:16:15', '2026-01-14 05:16:19'),
+(12, 'angela@gmail.com', 'Official Contestant Registration', '<h2>Welcome, Angela Mae Torres!</h2><p>You have been registered for <b>UEP Beauty Pageant</b> as Contestant #2.</p><div style=\'background:#f3f4f6; padding:15px;\'><strong>Credentials:</strong><br>Email: angela@gmail.com<br>Password: angela</div><p><a href=\'https://juvenal-esteban-octavalent.ngrok-free.dev/bpms_v2/public/index.php\'>Login Now</a></p>', 'sent', 1, '2026-01-14 05:18:08', '2026-01-14 05:18:21'),
+(13, 'janelle@gmail.com', 'Official Contestant Registration', '<h2>Welcome, Janelle Marie Aquino!</h2><p>You have been registered for <b>UEP Beauty Pageant</b> as Contestant #3.</p><div style=\'background:#f3f4f6; padding:15px;\'><strong>Credentials:</strong><br>Email: janelle@gmail.com<br>Password: janelle</div><p><a href=\'https://juvenal-esteban-octavalent.ngrok-free.dev/bpms_v2/public/index.php\'>Login Now</a></p>', 'sent', 1, '2026-01-14 05:27:12', '2026-01-14 05:27:18'),
+(14, 'rhea@gmail.com', 'Official Contestant Registration', '<h2>Welcome, Rhea Camille Domingo!</h2><p>You have been registered for <b>UEP Beauty Pageant</b> as Contestant #4.</p><div style=\'background:#f3f4f6; padding:15px;\'><strong>Credentials:</strong><br>Email: rhea@gmail.com<br>Password: rhea</div><p><a href=\'https://juvenal-esteban-octavalent.ngrok-free.dev/bpms_v2/public/index.php\'>Login Now</a></p>', 'sent', 1, '2026-01-14 05:28:24', '2026-01-14 05:28:49'),
+(15, 'nicole@gmail.com', 'Official Contestant Registration', '<h2>Welcome, Nicole Anne Villarin!</h2><p>You have been registered for <b>UEP Beauty Pageant</b> as Contestant #5.</p><div style=\'background:#f3f4f6; padding:15px;\'><strong>Credentials:</strong><br>Email: nicole@gmail.com<br>Password: nicole</div><p><a href=\'https://juvenal-esteban-octavalent.ngrok-free.dev/bpms_v2/public/index.php\'>Login Now</a></p>', 'sent', 1, '2026-01-14 05:29:46', '2026-01-14 05:29:57'),
+(16, 'patricia@gmail.com', 'Official Contestant Registration', '<h2>Welcome, Patricia Joy Alvero!</h2><p>You have been registered for <b>UEP Beauty Pageant</b> as Contestant #6.</p><div style=\'background:#f3f4f6; padding:15px;\'><strong>Credentials:</strong><br>Email: patricia@gmail.com<br>Password: patricia</div><p><a href=\'https://juvenal-esteban-octavalent.ngrok-free.dev/bpms_v2/public/index.php\'>Login Now</a></p>', 'sent', 1, '2026-01-14 05:31:18', '2026-01-14 05:31:21'),
+(17, 'hannah@gmail.com', 'Official Contestant Registration', '<h2>Welcome, Hannah Louise Perez!</h2><p>You have been registered for <b>UEP Beauty Pageant</b> as Contestant #7.</p><div style=\'background:#f3f4f6; padding:15px;\'><strong>Credentials:</strong><br>Email: hannah@gmail.com<br>Password: hannah</div><p><a href=\'https://juvenal-esteban-octavalent.ngrok-free.dev/bpms_v2/public/index.php\'>Login Now</a></p>', 'sent', 1, '2026-01-14 05:32:34', '2026-01-14 05:32:38');
 
 -- --------------------------------------------------------
 
@@ -237,8 +251,8 @@ CREATE TABLE `events` (
 --
 
 INSERT INTO `events` (`id`, `manager_id`, `title`, `event_date`, `venue`, `status`, `is_deleted`, `created_at`) VALUES
-(1, 1, 'Mutya San Old Rizal', '2026-06-12', 'Brgy. Old Rizal, Covered Court', 'Active', 0, '2026-01-11 20:31:22'),
-(2, 1, 'UEP Beauty Pageant', '2026-06-20', 'University Town, Gymnatorium', 'Inactive', 0, '2026-01-13 03:22:36');
+(1, 1, 'Mutya San Old Rizal', '2026-06-12', 'Brgy. Old Rizal, Covered Court', 'Inactive', 0, '2026-01-11 20:31:22'),
+(2, 1, 'UEP Beauty Pageant', '2026-06-20', 'University Town, Gymnatorium', 'Active', 0, '2026-01-13 03:22:36');
 
 -- --------------------------------------------------------
 
@@ -325,13 +339,22 @@ CREATE TABLE `event_contestants` (
 
 INSERT INTO `event_contestants` (`id`, `event_id`, `user_id`, `contestant_number`, `age`, `hometown`, `motto`, `height`, `bust`, `waist`, `hips`, `photo`, `status`, `is_deleted`, `registered_at`) VALUES
 (1, 1, 10, 1, 21, 'Old Rizal', 'Confidence is Beauty that Speaks', 170.00, 34.0, 25.0, 36.0, 'contestant_1768235296.png', 'Eliminated', 0, '2026-01-12 16:28:16'),
-(2, 1, 11, 2, 22, 'Old Rizal', 'Grace under pressure defines true strength', 168.00, 33.0, 26.0, 35.0, 'contestant_1768237749.png', 'Qualified', 0, '2026-01-12 17:09:09'),
+(2, 1, 11, 2, 22, 'Old Rizal', 'Grace under pressure defines true strength', 168.00, 33.0, 26.0, 35.0, 'contestant_1768237749.png', 'Eliminated', 0, '2026-01-12 17:09:09'),
 (3, 1, 12, 3, 22, 'Old Rizal', 'Purpose gives Beauty its Power', 150.00, 34.0, 24.0, 34.0, 'contestant_1768238563.jpg', 'Qualified', 0, '2026-01-12 17:22:43'),
 (4, 1, 13, 4, 20, 'Old Rizal', 'Elegance is a choice I make everyday', 157.00, 35.0, 25.0, 35.0, 'contestant_1768238666.jpg', 'Eliminated', 0, '2026-01-12 17:24:26'),
 (5, 1, 14, 5, 23, 'Old Rizal', 'Growth begins when courage replaces fear', 169.00, 34.0, 26.0, 36.0, 'contestant_1768238793.jpg', 'Eliminated', 0, '2026-01-12 17:26:33'),
-(6, 1, 15, 6, 19, 'Old Rizal', 'Strength is showing up as yourself', 166.00, 32.0, 24.0, 35.0, 'contestant_1768238882.jpg', 'Qualified', 0, '2026-01-12 17:28:02'),
-(7, 1, 16, 7, 21, 'Old Rizal', 'Authenticity is my Greatest advantage', 168.00, 33.0, 25.0, 36.0, 'contestant_1768238990.jpg', 'Qualified', 0, '2026-01-12 17:29:50'),
-(8, 1, 18, 8, 22, 'Old Rizal', 'Grace is power expressed softly', 171.00, 34.0, 26.0, 37.0, 'contestant_1768239227.jpg', 'Qualified', 0, '2026-01-12 17:33:47');
+(6, 1, 15, 6, 19, 'Old Rizal', 'Strength is showing up as yourself', 166.00, 32.0, 24.0, 35.0, 'contestant_1768238882.jpg', 'Eliminated', 0, '2026-01-12 17:28:02'),
+(7, 1, 16, 7, 21, 'Old Rizal', 'Authenticity is my Greatest advantage', 168.00, 33.0, 25.0, 36.0, 'contestant_1768238990.jpg', 'Eliminated', 0, '2026-01-12 17:29:50'),
+(8, 1, 18, 8, 22, 'Old Rizal', 'Grace is power expressed softly', 171.00, 34.0, 26.0, 37.0, 'contestant_1768239227.jpg', 'Eliminated', 0, '2026-01-12 17:33:47'),
+(9, 2, 19, 1, 22, 'Old Rizal', 'Life is Short', 170.00, 36.0, 24.0, 36.0, 'contestant_1768326763.jpg', 'Active', 0, '2026-01-13 17:52:43'),
+(10, 2, 24, 2, 20, 'UEP, Catarman N. Samar', 'Confidence begins with self-belief', 168.00, 34.0, 25.0, 36.0, 'contestant_1768367888.jpg', 'Active', 0, '2026-01-14 05:18:08'),
+(11, 2, 25, 3, 21, 'UEP, Catarman N. Samar', 'Grace is strength in motion', 170.00, 33.0, 26.0, 35.0, 'contestant_1768368432.jpg', 'Active', 0, '2026-01-14 05:27:12'),
+(12, 2, 26, 4, 22, 'UEP, Catarman N. Samar', 'Purpose gives beauty meaning', 167.00, 34.0, 25.0, 36.0, 'contestant_1768368504.jpg', 'Active', 0, '2026-01-14 05:28:24'),
+(13, 2, 27, 5, 19, 'UEP, Catarman N. Samar', 'Be bold, be kind, be real', 165.00, 32.0, 24.0, 35.0, 'contestant_1768368586.jpg', 'Active', 0, '2026-01-14 05:29:46'),
+(14, 2, 28, 6, 23, 'UEP, Catarman N. Samar', 'Discipline turns dreams into results', 172.00, 35.0, 26.0, 37.0, 'contestant_1768368677.jpg', 'Active', 0, '2026-01-14 05:31:18'),
+(15, 2, 29, 7, 21, 'UEP, Catarman N. Samar', 'Elegance is earned, not worn', 169.00, 34.0, 25.0, 36.0, 'contestant_1768368753.jpg', 'Active', 0, '2026-01-14 05:32:34'),
+(16, 2, 30, 8, 21, 'UEP, Catarman N. Samar', 'Stand firm, shine bright', 163.00, 35.0, 22.0, 33.0, 'contestant_1768369081.jpg', 'Active', 0, '2026-01-14 05:38:01'),
+(17, 2, 31, 9, 26, 'Bobon, Northern Samar', 'Life is an Adventure', 175.00, 36.0, 23.0, 37.0, 'contestant_1768369612.jpg', 'Rejected', 0, '2026-01-14 05:46:53');
 
 -- --------------------------------------------------------
 
@@ -358,7 +381,11 @@ INSERT INTO `event_judges` (`id`, `event_id`, `judge_id`, `is_chairman`, `status
 (2, 1, 6, 0, 'Active', 0, '2026-01-12 03:06:06'),
 (3, 1, 7, 0, 'Active', 0, '2026-01-12 03:15:59'),
 (4, 1, 8, 0, 'Active', 0, '2026-01-12 03:25:10'),
-(5, 1, 9, 0, 'Active', 0, '2026-01-12 05:47:27');
+(5, 1, 9, 0, 'Active', 0, '2026-01-12 05:47:27'),
+(6, 2, 32, 1, 'Active', 0, '2026-01-14 09:48:11'),
+(7, 2, 33, 0, 'Active', 0, '2026-01-14 09:49:01'),
+(8, 2, 34, 0, 'Active', 0, '2026-01-14 09:50:21'),
+(9, 2, 35, 0, 'Active', 0, '2026-01-14 09:58:10');
 
 -- --------------------------------------------------------
 
@@ -383,7 +410,11 @@ CREATE TABLE `event_teams` (
 INSERT INTO `event_teams` (`id`, `event_id`, `user_id`, `role`, `status`, `is_deleted`, `assigned_at`) VALUES
 (1, 1, 2, 'Judge Coordinator', 'Active', 0, '2026-01-12 02:23:05'),
 (2, 1, 3, 'Contestant Manager', 'Active', 0, '2026-01-12 02:39:20'),
-(3, 1, 4, 'Tabulator', 'Active', 0, '2026-01-12 02:40:38');
+(3, 1, 4, 'Tabulator', 'Active', 0, '2026-01-12 02:40:38'),
+(4, 2, 20, 'Judge Coordinator', 'Active', 0, '2026-01-14 05:13:05'),
+(5, 2, 21, 'Contestant Manager', 'Active', 0, '2026-01-14 05:13:53'),
+(6, 2, 22, 'Tabulator', 'Active', 0, '2026-01-14 05:15:04'),
+(7, 2, 23, 'Judge Coordinator', 'Inactive', 0, '2026-01-14 05:16:15');
 
 -- --------------------------------------------------------
 
@@ -455,7 +486,77 @@ INSERT INTO `judge_comments` (`id`, `segment_id`, `judge_id`, `contestant_id`, `
 (286, 5, 9, 3, '', '2026-01-13 12:31:33', NULL),
 (288, 5, 9, 6, '', '2026-01-13 12:31:37', NULL),
 (290, 5, 9, 7, '', '2026-01-13 12:31:43', NULL),
-(293, 5, 9, 8, '', '2026-01-13 12:31:48', NULL);
+(293, 5, 9, 8, '', '2026-01-13 12:31:48', NULL),
+(295, 4, 5, 2, '', '2026-01-13 15:43:24', NULL),
+(301, 4, 5, 3, '', '2026-01-13 15:43:44', NULL),
+(309, 4, 5, 6, '', '2026-01-13 15:44:11', NULL),
+(312, 4, 5, 7, '', '2026-01-13 15:44:16', NULL),
+(315, 4, 5, 8, '', '2026-01-13 15:44:21', NULL),
+(319, 5, 5, 2, '', '2026-01-13 15:44:37', NULL),
+(320, 5, 5, 6, '', '2026-01-13 15:44:42', NULL),
+(326, 5, 5, 3, '', '2026-01-13 15:45:00', NULL),
+(329, 5, 5, 7, '', '2026-01-13 15:45:04', NULL),
+(332, 5, 5, 8, '', '2026-01-13 15:45:09', NULL),
+(336, 4, 6, 2, '', '2026-01-13 15:54:28', NULL),
+(340, 4, 6, 3, '', '2026-01-13 15:54:39', NULL),
+(344, 4, 6, 6, '', '2026-01-13 15:54:47', NULL),
+(346, 4, 6, 7, '', '2026-01-13 15:54:51', NULL),
+(348, 4, 6, 8, '', '2026-01-13 15:54:55', NULL),
+(350, 5, 6, 2, '', '2026-01-13 15:55:00', NULL),
+(351, 5, 6, 3, '', '2026-01-13 15:55:03', NULL),
+(353, 5, 6, 6, '', '2026-01-13 15:55:07', NULL),
+(355, 5, 6, 7, '', '2026-01-13 15:55:11', NULL),
+(359, 5, 6, 8, '', '2026-01-13 15:55:19', NULL),
+(361, 4, 7, 2, '', '2026-01-13 15:56:14', NULL),
+(368, 4, 7, 3, '', '2026-01-13 15:56:32', NULL),
+(372, 4, 7, 6, '', '2026-01-13 15:56:39', NULL),
+(374, 4, 7, 7, '', '2026-01-13 15:56:43', NULL),
+(378, 4, 7, 8, '', '2026-01-13 15:56:50', NULL),
+(380, 5, 7, 2, '', '2026-01-13 15:56:56', NULL),
+(383, 5, 7, 3, '', '2026-01-13 15:57:00', NULL),
+(386, 5, 7, 6, '', '2026-01-13 15:57:04', NULL),
+(388, 5, 7, 7, '', '2026-01-13 15:57:08', NULL),
+(390, 5, 7, 8, '', '2026-01-13 15:57:12', NULL),
+(392, 4, 8, 2, '', '2026-01-13 15:57:59', NULL),
+(394, 4, 8, 3, '', '2026-01-13 15:58:02', NULL),
+(396, 4, 8, 6, '', '2026-01-13 15:58:06', NULL),
+(398, 4, 8, 7, '', '2026-01-13 15:58:10', NULL),
+(400, 4, 8, 8, '', '2026-01-13 15:58:13', NULL),
+(402, 5, 8, 2, '', '2026-01-13 15:58:17', NULL),
+(426, 5, 8, 3, '', '2026-01-13 16:00:07', NULL),
+(427, 5, 8, 6, '', '2026-01-13 16:00:11', NULL),
+(429, 5, 8, 7, '', '2026-01-13 16:00:14', NULL),
+(430, 5, 8, 8, '', '2026-01-13 16:00:17', NULL),
+(432, 6, 8, 2, '', '2026-01-13 16:04:34', NULL),
+(435, 6, 8, 3, '', '2026-01-13 16:04:44', NULL),
+(437, 6, 8, 6, '', '2026-01-13 16:04:49', NULL),
+(440, 7, 8, 2, '', '2026-01-13 16:04:57', NULL),
+(443, 7, 8, 3, '', '2026-01-13 16:05:01', NULL),
+(447, 7, 8, 6, '', '2026-01-13 16:05:09', NULL),
+(449, 6, 5, 2, '', '2026-01-13 16:06:12', NULL),
+(450, 6, 5, 3, '', '2026-01-13 16:06:21', NULL),
+(452, 6, 5, 6, '', '2026-01-13 16:06:25', NULL),
+(454, 7, 5, 2, '', '2026-01-13 16:06:36', NULL),
+(456, 7, 5, 3, '', '2026-01-13 16:06:41', NULL),
+(460, 7, 5, 6, '', '2026-01-13 16:06:46', NULL),
+(462, 6, 6, 2, '', '2026-01-13 16:07:25', NULL),
+(465, 6, 6, 3, '', '2026-01-13 16:07:29', NULL),
+(468, 6, 6, 6, '', '2026-01-13 16:07:35', NULL),
+(470, 7, 6, 2, '', '2026-01-13 16:07:38', NULL),
+(472, 7, 6, 3, '', '2026-01-13 16:07:47', NULL),
+(476, 7, 6, 6, '', '2026-01-13 16:07:53', NULL),
+(477, 6, 7, 2, '', '2026-01-13 16:08:22', NULL),
+(479, 6, 7, 3, '', '2026-01-13 16:08:25', NULL),
+(482, 6, 7, 6, '', '2026-01-13 16:08:30', NULL),
+(484, 7, 7, 2, '', '2026-01-13 16:08:36', NULL),
+(485, 7, 7, 3, '', '2026-01-13 16:08:37', NULL),
+(490, 7, 7, 6, '', '2026-01-13 16:08:48', NULL),
+(492, 6, 9, 2, '', '2026-01-13 16:09:42', NULL),
+(494, 6, 9, 3, '', '2026-01-13 16:09:49', NULL),
+(496, 6, 9, 6, '', '2026-01-13 16:09:53', NULL),
+(498, 7, 9, 2, '', '2026-01-13 16:09:59', NULL),
+(501, 7, 9, 3, '', '2026-01-13 16:10:02', NULL),
+(504, 7, 9, 6, '', '2026-01-13 16:10:09', NULL);
 
 --
 -- Triggers `judge_comments`
@@ -507,7 +608,16 @@ INSERT INTO `judge_round_status` (`id`, `round_id`, `judge_id`, `status`, `submi
 (7, 1, 7, 'Submitted', '2026-01-13 10:45:27', NULL),
 (8, 1, 8, 'Submitted', '2026-01-13 10:48:59', NULL),
 (9, 1, 9, 'Submitted', '2026-01-13 10:53:31', NULL),
-(10, 2, 9, 'Submitted', '2026-01-13 12:32:00', NULL);
+(10, 2, 9, 'Submitted', '2026-01-13 12:32:00', NULL),
+(11, 2, 5, 'Submitted', '2026-01-13 15:45:40', NULL),
+(12, 2, 6, 'Submitted', '2026-01-13 15:55:21', NULL),
+(13, 2, 7, 'Submitted', '2026-01-13 15:57:21', NULL),
+(14, 2, 8, 'Submitted', '2026-01-13 16:00:55', NULL),
+(15, 3, 8, 'Submitted', '2026-01-13 16:05:14', NULL),
+(16, 3, 5, 'Submitted', '2026-01-13 16:06:58', NULL),
+(17, 3, 6, 'Submitted', '2026-01-13 16:08:00', NULL),
+(18, 3, 7, 'Submitted', '2026-01-13 16:08:53', NULL),
+(19, 3, 9, 'Submitted', '2026-01-13 16:10:20', NULL);
 
 -- --------------------------------------------------------
 
@@ -533,8 +643,8 @@ CREATE TABLE `rounds` (
 
 INSERT INTO `rounds` (`id`, `event_id`, `title`, `ordering`, `type`, `qualify_count`, `status`, `is_deleted`, `created_at`) VALUES
 (1, 1, 'Preliminary Round', 1, 'Elimination', 5, 'Completed', 0, '2026-01-12 18:10:48'),
-(2, 1, 'Semi-Final Round', 2, 'Elimination', 3, 'Active', 0, '2026-01-12 18:11:42'),
-(3, 1, 'Final Round', 3, 'Final', 1, 'Pending', 0, '2026-01-12 18:11:54');
+(2, 1, 'Semi-Final Round', 2, 'Elimination', 3, 'Completed', 0, '2026-01-12 18:11:42'),
+(3, 1, 'Final Round', 3, 'Final', 1, 'Completed', 0, '2026-01-12 18:11:54');
 
 --
 -- Triggers `rounds`
@@ -579,7 +689,15 @@ INSERT INTO `round_rankings` (`id`, `round_id`, `contestant_id`, `total_score`, 
 (5, 1, 2, 89.00, 5),
 (6, 1, 5, 88.40, 6),
 (7, 1, 1, 88.20, 7),
-(8, 1, 4, 86.40, 8);
+(8, 1, 4, 86.40, 8),
+(9, 2, 3, 86.90, 1),
+(10, 2, 2, 83.50, 2),
+(11, 2, 6, 76.50, 3),
+(12, 2, 7, 74.10, 4),
+(13, 2, 8, 72.30, 5),
+(14, 3, 3, 88.30, 1),
+(15, 3, 2, 81.40, 2),
+(16, 3, 6, 80.70, 3);
 
 -- --------------------------------------------------------
 
@@ -751,7 +869,217 @@ INSERT INTO `scores` (`id`, `criteria_id`, `judge_id`, `contestant_id`, `score_v
 (735, 9, 9, 7, 20.00, '2026-01-13 12:31:43', '2026-01-13 12:31:44'),
 (751, 7, 9, 8, 31.00, '2026-01-13 12:31:48', NULL),
 (752, 8, 9, 8, 29.00, '2026-01-13 12:31:48', NULL),
-(753, 9, 9, 8, 21.00, '2026-01-13 12:31:48', NULL);
+(753, 9, 9, 8, 21.00, '2026-01-13 12:31:48', NULL),
+(760, 4, 5, 2, 34.00, '2026-01-13 15:43:24', '2026-01-13 15:43:33'),
+(761, 5, 5, 2, 26.00, '2026-01-13 15:43:24', '2026-01-13 15:43:35'),
+(762, 6, 5, 2, 28.00, '2026-01-13 15:43:24', '2026-01-13 15:43:37'),
+(778, 4, 5, 3, 27.00, '2026-01-13 15:43:44', '2026-01-13 15:43:57'),
+(779, 5, 5, 3, 27.00, '2026-01-13 15:43:44', '2026-01-13 15:43:58'),
+(780, 6, 5, 3, 28.00, '2026-01-13 15:43:44', '2026-01-13 15:44:00'),
+(802, 4, 5, 6, 30.00, '2026-01-13 15:44:11', '2026-01-13 15:44:12'),
+(803, 5, 5, 6, 26.00, '2026-01-13 15:44:11', NULL),
+(804, 6, 5, 6, 28.00, '2026-01-13 15:44:11', NULL),
+(811, 4, 5, 7, 30.00, '2026-01-13 15:44:16', '2026-01-13 15:44:17'),
+(812, 5, 5, 7, 28.00, '2026-01-13 15:44:16', NULL),
+(813, 6, 5, 7, 23.00, '2026-01-13 15:44:16', NULL),
+(820, 4, 5, 8, 23.00, '2026-01-13 15:44:21', NULL),
+(821, 5, 5, 8, 26.00, '2026-01-13 15:44:21', NULL),
+(822, 6, 5, 8, 30.00, '2026-01-13 15:44:21', '2026-01-13 15:44:23'),
+(835, 7, 5, 2, 26.00, '2026-01-13 15:44:37', '2026-01-13 15:44:53'),
+(836, 8, 5, 2, 26.00, '2026-01-13 15:44:37', '2026-01-13 15:44:52'),
+(837, 9, 5, 2, 19.00, '2026-01-13 15:44:37', '2026-01-13 15:44:52'),
+(841, 7, 5, 6, 37.00, '2026-01-13 15:44:42', NULL),
+(842, 8, 5, 6, 29.00, '2026-01-13 15:44:42', '2026-01-13 15:44:44'),
+(843, 9, 5, 6, 21.00, '2026-01-13 15:44:42', '2026-01-13 15:44:44'),
+(877, 7, 5, 3, 35.00, '2026-01-13 15:45:00', NULL),
+(878, 8, 5, 3, 31.00, '2026-01-13 15:45:00', '2026-01-13 15:45:31'),
+(879, 9, 5, 3, 24.00, '2026-01-13 15:45:00', '2026-01-13 15:45:01'),
+(895, 7, 5, 7, 28.00, '2026-01-13 15:45:04', '2026-01-13 15:45:05'),
+(896, 8, 5, 7, 30.00, '2026-01-13 15:45:04', NULL),
+(897, 9, 5, 7, 24.00, '2026-01-13 15:45:04', NULL),
+(913, 7, 5, 8, 29.00, '2026-01-13 15:45:09', NULL),
+(914, 8, 5, 8, 31.00, '2026-01-13 15:45:09', NULL),
+(915, 9, 5, 8, 22.00, '2026-01-13 15:45:09', NULL),
+(934, 4, 6, 2, 36.00, '2026-01-13 15:54:28', NULL),
+(935, 5, 6, 2, 18.00, '2026-01-13 15:54:28', '2026-01-13 15:54:29'),
+(936, 6, 6, 2, 22.00, '2026-01-13 15:54:28', '2026-01-13 15:54:30'),
+(946, 4, 6, 3, 26.00, '2026-01-13 15:54:39', NULL),
+(947, 5, 6, 3, 25.00, '2026-01-13 15:54:39', '2026-01-13 15:54:42'),
+(948, 6, 6, 3, 29.00, '2026-01-13 15:54:39', '2026-01-13 15:54:40'),
+(958, 4, 6, 6, 34.00, '2026-01-13 15:54:47', NULL),
+(959, 5, 6, 6, 29.00, '2026-01-13 15:54:47', NULL),
+(960, 6, 6, 6, 29.00, '2026-01-13 15:54:47', NULL),
+(964, 4, 6, 7, 28.00, '2026-01-13 15:54:51', NULL),
+(965, 5, 6, 7, 17.00, '2026-01-13 15:54:51', NULL),
+(966, 6, 6, 7, 20.00, '2026-01-13 15:54:51', NULL),
+(970, 4, 6, 8, 31.00, '2026-01-13 15:54:55', NULL),
+(971, 5, 6, 8, 21.00, '2026-01-13 15:54:55', NULL),
+(972, 6, 6, 8, 21.00, '2026-01-13 15:54:55', NULL),
+(979, 7, 6, 2, 38.00, '2026-01-13 15:55:00', NULL),
+(980, 8, 6, 2, 30.00, '2026-01-13 15:55:00', NULL),
+(981, 9, 6, 2, 22.00, '2026-01-13 15:55:00', NULL),
+(985, 7, 6, 3, 38.00, '2026-01-13 15:55:03', NULL),
+(986, 8, 6, 3, 33.00, '2026-01-13 15:55:03', NULL),
+(987, 9, 6, 3, 24.00, '2026-01-13 15:55:03', NULL),
+(997, 7, 6, 6, 34.00, '2026-01-13 15:55:07', NULL),
+(998, 8, 6, 6, 32.00, '2026-01-13 15:55:07', NULL),
+(999, 9, 6, 6, 23.00, '2026-01-13 15:55:07', NULL),
+(1009, 7, 6, 7, 34.00, '2026-01-13 15:55:11', '2026-01-13 15:55:16'),
+(1010, 8, 6, 7, 25.00, '2026-01-13 15:55:11', '2026-01-13 15:55:16'),
+(1011, 9, 6, 7, 18.00, '2026-01-13 15:55:11', '2026-01-13 15:55:16'),
+(1033, 7, 6, 8, 34.00, '2026-01-13 15:55:19', '2026-01-13 15:55:19'),
+(1034, 8, 6, 8, 22.00, '2026-01-13 15:55:19', NULL),
+(1035, 9, 6, 8, 22.00, '2026-01-13 15:55:19', NULL),
+(1042, 4, 7, 2, 38.00, '2026-01-13 15:56:14', '2026-01-13 15:56:29'),
+(1043, 5, 7, 2, 30.00, '2026-01-13 15:56:14', '2026-01-13 15:56:19'),
+(1044, 6, 7, 2, 28.00, '2026-01-13 15:56:14', '2026-01-13 15:56:22'),
+(1063, 4, 7, 3, 38.00, '2026-01-13 15:56:32', NULL),
+(1064, 5, 7, 3, 27.00, '2026-01-13 15:56:32', '2026-01-13 15:56:33'),
+(1065, 6, 7, 3, 29.00, '2026-01-13 15:56:32', '2026-01-13 15:56:34'),
+(1075, 4, 7, 6, 27.00, '2026-01-13 15:56:39', NULL),
+(1076, 5, 7, 6, 21.00, '2026-01-13 15:56:39', NULL),
+(1077, 6, 7, 6, 22.00, '2026-01-13 15:56:39', NULL),
+(1081, 4, 7, 7, 26.00, '2026-01-13 15:56:43', '2026-01-13 15:56:44'),
+(1082, 5, 7, 7, 19.00, '2026-01-13 15:56:43', NULL),
+(1083, 6, 7, 7, 15.00, '2026-01-13 15:56:43', '2026-01-13 15:56:46'),
+(1093, 4, 7, 8, 29.00, '2026-01-13 15:56:50', NULL),
+(1094, 5, 7, 8, 19.00, '2026-01-13 15:56:50', NULL),
+(1095, 6, 7, 8, 23.00, '2026-01-13 15:56:50', NULL),
+(1102, 7, 7, 2, 34.00, '2026-01-13 15:56:56', NULL),
+(1103, 8, 7, 2, 32.00, '2026-01-13 15:56:56', NULL),
+(1104, 9, 7, 2, 21.00, '2026-01-13 15:56:56', '2026-01-13 15:56:57'),
+(1120, 7, 7, 3, 38.00, '2026-01-13 15:57:00', NULL),
+(1121, 8, 7, 3, 29.00, '2026-01-13 15:57:00', NULL),
+(1122, 9, 7, 3, 22.00, '2026-01-13 15:57:00', '2026-01-13 15:57:01'),
+(1138, 7, 7, 6, 28.00, '2026-01-13 15:57:04', '2026-01-13 15:57:05'),
+(1139, 8, 7, 6, 20.00, '2026-01-13 15:57:04', NULL),
+(1140, 9, 7, 6, 13.00, '2026-01-13 15:57:04', NULL),
+(1150, 7, 7, 7, 32.00, '2026-01-13 15:57:08', NULL),
+(1151, 8, 7, 7, 20.00, '2026-01-13 15:57:08', NULL),
+(1152, 9, 7, 7, 16.00, '2026-01-13 15:57:08', NULL),
+(1162, 7, 7, 8, 28.00, '2026-01-13 15:57:12', NULL),
+(1163, 8, 7, 8, 29.00, '2026-01-13 15:57:12', NULL),
+(1164, 9, 7, 8, 17.00, '2026-01-13 15:57:12', NULL),
+(1171, 4, 8, 2, 39.00, '2026-01-13 15:57:59', '2026-01-13 15:59:33'),
+(1172, 5, 8, 2, 29.00, '2026-01-13 15:57:59', '2026-01-13 15:59:33'),
+(1173, 6, 8, 2, 30.00, '2026-01-13 15:57:59', '2026-01-13 15:59:34'),
+(1177, 4, 8, 3, 37.00, '2026-01-13 15:58:02', '2026-01-13 15:59:38'),
+(1178, 5, 8, 3, 28.00, '2026-01-13 15:58:02', '2026-01-13 15:59:38'),
+(1179, 6, 8, 3, 29.00, '2026-01-13 15:58:02', '2026-01-13 15:59:38'),
+(1183, 4, 8, 6, 25.00, '2026-01-13 15:58:06', '2026-01-13 15:59:42'),
+(1184, 5, 8, 6, 15.00, '2026-01-13 15:58:06', '2026-01-13 15:59:40'),
+(1185, 6, 8, 6, 17.00, '2026-01-13 15:58:06', '2026-01-13 15:59:42'),
+(1189, 4, 8, 7, 29.00, '2026-01-13 15:58:10', '2026-01-13 15:59:45'),
+(1190, 5, 8, 7, 26.00, '2026-01-13 15:58:10', '2026-01-13 15:59:45'),
+(1191, 6, 8, 7, 26.00, '2026-01-13 15:58:10', '2026-01-13 15:59:45'),
+(1195, 4, 8, 8, 23.00, '2026-01-13 15:58:13', '2026-01-13 15:59:50'),
+(1196, 5, 8, 8, 22.00, '2026-01-13 15:58:13', '2026-01-13 15:59:49'),
+(1197, 6, 8, 8, 23.00, '2026-01-13 15:58:13', '2026-01-13 15:59:49'),
+(1204, 7, 8, 2, 38.00, '2026-01-13 15:58:17', '2026-01-13 16:00:02'),
+(1205, 8, 8, 2, 32.00, '2026-01-13 15:58:17', '2026-01-13 16:00:00'),
+(1206, 9, 8, 2, 23.00, '2026-01-13 15:58:17', '2026-01-13 16:00:02'),
+(1303, 7, 8, 3, 34.00, '2026-01-13 16:00:07', NULL),
+(1304, 8, 8, 3, 29.00, '2026-01-13 16:00:07', NULL),
+(1305, 9, 8, 3, 21.00, '2026-01-13 16:00:07', NULL),
+(1309, 7, 8, 6, 29.00, '2026-01-13 16:00:11', NULL),
+(1310, 8, 8, 6, 18.00, '2026-01-13 16:00:11', NULL),
+(1311, 9, 8, 6, 17.00, '2026-01-13 16:00:11', NULL),
+(1321, 7, 8, 7, 33.00, '2026-01-13 16:00:14', NULL),
+(1322, 8, 8, 7, 19.00, '2026-01-13 16:00:14', NULL),
+(1323, 9, 8, 7, 15.00, '2026-01-13 16:00:14', NULL),
+(1327, 7, 8, 8, 19.00, '2026-01-13 16:00:17', NULL),
+(1328, 8, 8, 8, 22.00, '2026-01-13 16:00:17', NULL),
+(1329, 9, 8, 8, 17.00, '2026-01-13 16:00:17', NULL),
+(1336, 10, 8, 2, 25.00, '2026-01-13 16:04:34', NULL),
+(1337, 11, 8, 2, 26.00, '2026-01-13 16:04:34', NULL),
+(1338, 12, 8, 2, 34.00, '2026-01-13 16:04:34', '2026-01-13 16:04:35'),
+(1345, 10, 8, 3, 30.00, '2026-01-13 16:04:44', NULL),
+(1346, 11, 8, 3, 30.00, '2026-01-13 16:04:44', NULL),
+(1347, 12, 8, 3, 40.00, '2026-01-13 16:04:44', NULL),
+(1351, 10, 8, 6, 22.00, '2026-01-13 16:04:49', NULL),
+(1352, 11, 8, 6, 26.00, '2026-01-13 16:04:49', NULL),
+(1353, 12, 8, 6, 33.00, '2026-01-13 16:04:49', '2026-01-13 16:04:50'),
+(1363, 13, 8, 2, 46.00, '2026-01-13 16:04:57', NULL),
+(1364, 14, 8, 2, 22.00, '2026-01-13 16:04:57', NULL),
+(1365, 15, 8, 2, 23.00, '2026-01-13 16:04:57', '2026-01-13 16:04:57'),
+(1381, 13, 8, 3, 50.00, '2026-01-13 16:05:01', NULL),
+(1382, 14, 8, 3, 23.00, '2026-01-13 16:05:01', '2026-01-13 16:05:02'),
+(1383, 15, 8, 3, 23.00, '2026-01-13 16:05:01', '2026-01-13 16:05:03'),
+(1405, 13, 8, 6, 43.00, '2026-01-13 16:05:09', NULL),
+(1406, 14, 8, 6, 21.00, '2026-01-13 16:05:09', NULL),
+(1407, 15, 8, 6, 23.00, '2026-01-13 16:05:09', NULL),
+(1414, 10, 5, 2, 24.00, '2026-01-13 16:06:12', NULL),
+(1415, 11, 5, 2, 26.00, '2026-01-13 16:06:12', NULL),
+(1416, 12, 5, 2, 31.00, '2026-01-13 16:06:12', NULL),
+(1417, 10, 5, 3, 28.00, '2026-01-13 16:06:21', NULL),
+(1418, 11, 5, 3, 26.00, '2026-01-13 16:06:21', NULL),
+(1419, 12, 5, 3, 37.00, '2026-01-13 16:06:21', NULL),
+(1423, 10, 5, 6, 22.00, '2026-01-13 16:06:25', NULL),
+(1424, 11, 5, 6, 30.00, '2026-01-13 16:06:25', NULL),
+(1425, 12, 5, 6, 40.00, '2026-01-13 16:06:25', NULL),
+(1432, 13, 5, 2, 42.00, '2026-01-13 16:06:36', NULL),
+(1433, 14, 5, 2, 22.00, '2026-01-13 16:06:36', NULL),
+(1434, 15, 5, 2, 20.00, '2026-01-13 16:06:36', NULL),
+(1444, 13, 5, 3, 46.00, '2026-01-13 16:06:41', NULL),
+(1445, 14, 5, 3, 22.00, '2026-01-13 16:06:41', '2026-01-13 16:06:42'),
+(1446, 15, 5, 3, 25.00, '2026-01-13 16:06:41', '2026-01-13 16:06:43'),
+(1468, 13, 5, 6, 36.00, '2026-01-13 16:06:46', NULL),
+(1469, 14, 5, 6, 20.00, '2026-01-13 16:06:46', '2026-01-13 16:06:49'),
+(1470, 15, 5, 6, 25.00, '2026-01-13 16:06:46', '2026-01-13 16:06:49'),
+(1477, 10, 6, 2, 24.00, '2026-01-13 16:07:25', '2026-01-13 16:07:26'),
+(1478, 11, 6, 2, 24.00, '2026-01-13 16:07:25', '2026-01-13 16:07:26'),
+(1479, 12, 6, 2, 38.00, '2026-01-13 16:07:25', '2026-01-13 16:07:26'),
+(1486, 10, 6, 3, 28.00, '2026-01-13 16:07:29', NULL),
+(1487, 11, 6, 3, 27.00, '2026-01-13 16:07:29', '2026-01-13 16:07:31'),
+(1488, 12, 6, 3, 36.00, '2026-01-13 16:07:29', '2026-01-13 16:07:31'),
+(1495, 10, 6, 6, 22.00, '2026-01-13 16:07:35', NULL),
+(1496, 11, 6, 6, 27.00, '2026-01-13 16:07:35', NULL),
+(1497, 12, 6, 6, 37.00, '2026-01-13 16:07:35', NULL),
+(1504, 13, 6, 2, 50.00, '2026-01-13 16:07:38', NULL),
+(1505, 14, 6, 2, 23.00, '2026-01-13 16:07:38', '2026-01-13 16:07:44'),
+(1506, 15, 6, 2, 22.00, '2026-01-13 16:07:38', '2026-01-13 16:07:44'),
+(1516, 13, 6, 3, 46.00, '2026-01-13 16:07:47', NULL),
+(1517, 14, 6, 3, 25.00, '2026-01-13 16:07:47', '2026-01-13 16:07:47'),
+(1518, 15, 6, 3, 25.00, '2026-01-13 16:07:47', '2026-01-13 16:07:49'),
+(1540, 13, 6, 6, 37.00, '2026-01-13 16:07:53', NULL),
+(1541, 14, 6, 6, 23.00, '2026-01-13 16:07:53', NULL),
+(1542, 15, 6, 6, 22.00, '2026-01-13 16:07:53', NULL),
+(1543, 10, 7, 2, 25.00, '2026-01-13 16:08:22', NULL),
+(1544, 11, 7, 2, 26.00, '2026-01-13 16:08:22', NULL),
+(1545, 12, 7, 2, 37.00, '2026-01-13 16:08:22', NULL),
+(1549, 10, 7, 3, 21.00, '2026-01-13 16:08:25', NULL),
+(1550, 11, 7, 3, 27.00, '2026-01-13 16:08:25', NULL),
+(1551, 12, 7, 3, 35.00, '2026-01-13 16:08:25', '2026-01-13 16:08:26'),
+(1558, 10, 7, 6, 28.00, '2026-01-13 16:08:30', NULL),
+(1559, 11, 7, 6, 26.00, '2026-01-13 16:08:30', NULL),
+(1560, 12, 7, 6, 29.00, '2026-01-13 16:08:30', NULL),
+(1567, 13, 7, 2, 28.00, '2026-01-13 16:08:36', '2026-01-13 16:08:40'),
+(1568, 14, 7, 2, 20.00, '2026-01-13 16:08:36', '2026-01-13 16:08:40'),
+(1569, 15, 7, 2, 17.00, '2026-01-13 16:08:36', '2026-01-13 16:08:40'),
+(1573, 13, 7, 3, 34.00, '2026-01-13 16:08:37', '2026-01-13 16:08:45'),
+(1574, 14, 7, 3, 21.00, '2026-01-13 16:08:37', '2026-01-13 16:08:45'),
+(1575, 15, 7, 3, 17.00, '2026-01-13 16:08:37', '2026-01-13 16:08:45'),
+(1603, 13, 7, 6, 31.00, '2026-01-13 16:08:48', NULL),
+(1604, 14, 7, 6, 21.00, '2026-01-13 16:08:48', NULL),
+(1605, 15, 7, 6, 16.00, '2026-01-13 16:08:48', NULL),
+(1612, 10, 9, 2, 18.00, '2026-01-13 16:09:42', NULL),
+(1613, 11, 9, 2, 25.00, '2026-01-13 16:09:42', NULL),
+(1614, 12, 9, 2, 28.00, '2026-01-13 16:09:42', NULL),
+(1618, 10, 9, 3, 20.00, '2026-01-13 16:09:49', '2026-01-13 16:09:50'),
+(1619, 11, 9, 3, 19.00, '2026-01-13 16:09:49', NULL),
+(1620, 12, 9, 3, 37.00, '2026-01-13 16:09:49', NULL),
+(1624, 10, 9, 6, 18.00, '2026-01-13 16:09:53', NULL),
+(1625, 11, 9, 6, 23.00, '2026-01-13 16:09:53', NULL),
+(1626, 12, 9, 6, 26.00, '2026-01-13 16:09:53', NULL),
+(1633, 13, 9, 2, 26.00, '2026-01-13 16:09:59', NULL),
+(1634, 14, 9, 2, 22.00, '2026-01-13 16:09:59', NULL),
+(1635, 15, 9, 2, 20.00, '2026-01-13 16:09:59', '2026-01-13 16:10:00'),
+(1651, 13, 9, 3, 43.00, '2026-01-13 16:10:02', '2026-01-13 16:10:05'),
+(1652, 14, 9, 3, 22.00, '2026-01-13 16:10:02', '2026-01-13 16:10:05'),
+(1653, 15, 9, 3, 20.00, '2026-01-13 16:10:02', '2026-01-13 16:10:06'),
+(1669, 13, 9, 6, 40.00, '2026-01-13 16:10:09', NULL),
+(1670, 14, 9, 6, 21.00, '2026-01-13 16:10:09', NULL),
+(1671, 15, 9, 6, 19.00, '2026-01-13 16:10:09', NULL);
 
 --
 -- Triggers `scores`
@@ -879,9 +1207,9 @@ CREATE TABLE `tickets` (
 INSERT INTO `tickets` (`id`, `event_id`, `ticket_code`, `status`, `generated_at`, `used_at`) VALUES
 (1, 1, 'F3E568', 'Used', '2026-01-12 05:52:12', NULL),
 (2, 1, 'BJN4WS', 'Used', '2026-01-12 05:52:12', '2026-01-13 10:20:54'),
-(3, 1, '6XGKWH', 'Unused', '2026-01-12 05:52:12', NULL),
-(4, 1, 'CPF7NT', 'Unused', '2026-01-12 05:52:12', NULL),
-(5, 1, 'FPNR4C', 'Unused', '2026-01-12 05:52:12', NULL);
+(3, 1, '6XGKWH', 'Used', '2026-01-12 05:52:12', '2026-01-13 16:47:39'),
+(4, 1, 'CPF7NT', 'Used', '2026-01-12 05:52:12', '2026-01-13 16:48:07'),
+(5, 1, 'FPNR4C', 'Used', '2026-01-12 05:52:12', '2026-01-13 16:48:32');
 
 -- --------------------------------------------------------
 
@@ -923,7 +1251,24 @@ INSERT INTO `users` (`id`, `created_by`, `name`, `email`, `phone`, `password`, `
 (14, 1, 'Trisha Mae Gonzales', 'trisha@gmail.com', NULL, '$2y$10$LMezEnOuL1..i.bI1e9i3eqvoeVlLTN2T.ZWPqMEakkw89GAOogWa', 'Contestant', 'Active', 0, '2026-01-12 17:26:33'),
 (15, 1, 'Alyssa Montoya', 'alyssa@gmail.com', NULL, '$2y$10$FMYOyB4SgyLBL7dTclqZmO2HUS1f9qbI038GmD7n8wwXMq2OYuNee', 'Contestant', 'Active', 0, '2026-01-12 17:28:02'),
 (16, 1, 'Francine Mae Navarro', 'francine@gmail.com', NULL, '$2y$10$jqWdxbjis/OE0L73/rBR7uPde1gNExR4OPayzNAa5n2/FBg/aLDpK', 'Contestant', 'Active', 0, '2026-01-12 17:29:50'),
-(18, 1, 'Nicole Patrice Uy', 'fourthemail936@gmail.com', NULL, '$2y$10$lcGS4h03.vKYUnBbjh.QuuRtSgOAVo.Y1hdX/petzVHP7OhC/T6i6', 'Contestant', 'Active', 0, '2026-01-12 17:33:47');
+(18, 1, 'Nicole Patrice Uy', 'fourthemail936@gmail.com', NULL, '$2y$10$lcGS4h03.vKYUnBbjh.QuuRtSgOAVo.Y1hdX/petzVHP7OhC/T6i6', 'Contestant', 'Active', 0, '2026-01-12 17:33:47'),
+(19, NULL, 'Maria Elena Cruz', 'maria_contestant@gmail.com', NULL, '$2y$10$SPAxpiekZrY4NUOD9dI5Z.s9JaN2L0AXA7TRHT0VyZXE9Uk0u2Z/m', 'Contestant', 'Active', 0, '2026-01-13 18:47:42'),
+(20, 1, 'Camille Rose Bautista', 'camille@gmail.com', '09087654321', '$2y$10$/myqekoPUb4ff1xwlJhxR.WQ2ds8sMZDmG94BE9lB1QaH/58aNBni', 'Judge Coordinator', 'Active', 0, '2026-01-14 05:13:05'),
+(21, 1, 'Mark Anthony Robles', 'mark@gmail.com', '09283456789', '$2y$10$vJwVx/jzkkF9tr4wVrul4OjInh8OIQwcgyNcuEduJuspqQO8UI8O.', 'Contestant Manager', 'Active', 0, '2026-01-14 05:13:53'),
+(22, 1, 'Joel Vincent Ramos', 'joel@gmail.com', '09394567891', '$2y$10$Q4K2OoWPCYLtj3kUx3xLbeFmEU7ovbDKEX7Y9P1HCSR80C30CQxoa', 'Tabulator', 'Active', 0, '2026-01-14 05:15:04'),
+(23, 1, 'Dr. Liza Mae Navarro', 'liza@gmail.com', '09171234567', '$2y$10$glQI/u9MpMO7.256qgx5RegseYXwSu5CAZQeLFGNj8i4Y4cVEq6dG', 'Judge Coordinator', 'Inactive', 0, '2026-01-14 05:16:15'),
+(24, 1, 'Angela Mae Torres', 'angela@gmail.com', NULL, '$2y$10$sfpKjKzxWyEjDaIk7ImKFOyu957NVXXHeVp1Q3a/KWvA7XiudEOEK', 'Contestant', 'Active', 0, '2026-01-14 05:18:08'),
+(25, 1, 'Janelle Marie Aquino', 'janelle@gmail.com', NULL, '$2y$10$5Uz1rJeoziwCX1XS3udk8uDkyVTXwVaVIFGNE51BWIENkjFq7O.q.', 'Contestant', 'Active', 0, '2026-01-14 05:27:12'),
+(26, 1, 'Rhea Camille Domingo', 'rhea@gmail.com', NULL, '$2y$10$XDPvgoVmsGQhNZQ5cDKgxeDJIYa8pR2t2voNyonQJBbm4vSuwrixa', 'Contestant', 'Active', 0, '2026-01-14 05:28:24'),
+(27, 1, 'Nicole Anne Villarin', 'nicole@gmail.com', NULL, '$2y$10$8pZz7NwLXH3qjoPkEG0eueizO8DoLbts2OPpbucjmWN7iIZmNSxj2', 'Contestant', 'Active', 0, '2026-01-14 05:29:46'),
+(28, 1, 'Patricia Joy Alvero', 'patricia@gmail.com', NULL, '$2y$10$7naqx0uQHxxJ95Wq36FPdeo/MymEcgbOeKBpGfg8/fCrk9SN/sM/y', 'Contestant', 'Active', 0, '2026-01-14 05:31:18'),
+(29, 1, 'Hannah Louise Perez', 'hannah@gmail.com', NULL, '$2y$10$zVdcMFZ/ceXjXRjy5tGqNuaoN2yDI4SrKi84ShGsdsA6v23lqXney', 'Contestant', 'Active', 0, '2026-01-14 05:32:34'),
+(30, NULL, 'Monica Geller', 'geller@gmail.com', NULL, '$2y$10$RreiVPLKHXRgkIHHDPepeO8fH72d3Q3fxupmf8XwCMZeuDUZB0.dC', 'Contestant', 'Active', 0, '2026-01-14 05:38:01'),
+(31, NULL, 'Phoebe Buffay', 'buffay@gmail.com', NULL, '$2y$10$5Rn7JYNbm0W8FzPK38oDSu7qJ8DzO57y0VesEJ4rZz5/zUxweADU6', 'Contestant', 'Inactive', 0, '2026-01-14 05:46:53'),
+(32, 1, 'Prof. Renato L. Cruz', 'renato@gmail.com', NULL, '$2y$10$4gliTLsAIyz3FO8HNF1XuezYygLKCmlaKthlKL5S9HzC5UIzbqjW2', 'Judge', 'Active', 0, '2026-01-14 09:48:11'),
+(33, 1, 'Ms. Andrea Nicole Santos', 'santos@gmail.com', NULL, '$2y$10$JEfgUIG0e5Lb2xhKuD4OZeMiusc.6hyERyIcUnH9FDzp60lE2dRqe', 'Judge', 'Active', 0, '2026-01-14 09:49:01'),
+(34, 1, 'Dr. Manuel T. Garcia', 'manuel@gmail.com', NULL, '$2y$10$6ZCPJ2ex46CYBQQ2i4THr.bOxrsNQXljXUDofPIXyWV9pB8Hipolq', 'Judge', 'Active', 0, '2026-01-14 09:50:21'),
+(35, 1, 'Ms. Bianca Rose Lim', 'lim@gmail.com', NULL, '$2y$10$EEWv2Z1VBsnNGYECcZWsMetgxQ6iAD6NR9R2htEH8rtHmgl9HOAyq', 'Judge', 'Active', 0, '2026-01-14 09:58:10');
 
 --
 -- Indexes for dumped tables
@@ -1077,13 +1422,13 @@ ALTER TABLE `users`
 -- AUTO_INCREMENT for table `audience_votes`
 --
 ALTER TABLE `audience_votes`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
 
 --
 -- AUTO_INCREMENT for table `awards`
 --
 ALTER TABLE `awards`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
 
 --
 -- AUTO_INCREMENT for table `award_winners`
@@ -1101,7 +1446,7 @@ ALTER TABLE `criteria`
 -- AUTO_INCREMENT for table `email_queue`
 --
 ALTER TABLE `email_queue`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=18;
 
 --
 -- AUTO_INCREMENT for table `events`
@@ -1119,31 +1464,31 @@ ALTER TABLE `event_activities`
 -- AUTO_INCREMENT for table `event_contestants`
 --
 ALTER TABLE `event_contestants`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=18;
 
 --
 -- AUTO_INCREMENT for table `event_judges`
 --
 ALTER TABLE `event_judges`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=10;
 
 --
 -- AUTO_INCREMENT for table `event_teams`
 --
 ALTER TABLE `event_teams`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
 
 --
 -- AUTO_INCREMENT for table `judge_comments`
 --
 ALTER TABLE `judge_comments`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=295;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=506;
 
 --
 -- AUTO_INCREMENT for table `judge_round_status`
 --
 ALTER TABLE `judge_round_status`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=11;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=20;
 
 --
 -- AUTO_INCREMENT for table `rounds`
@@ -1155,13 +1500,13 @@ ALTER TABLE `rounds`
 -- AUTO_INCREMENT for table `round_rankings`
 --
 ALTER TABLE `round_rankings`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=17;
 
 --
 -- AUTO_INCREMENT for table `scores`
 --
 ALTER TABLE `scores`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=760;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1678;
 
 --
 -- AUTO_INCREMENT for table `segments`
@@ -1179,7 +1524,7 @@ ALTER TABLE `tickets`
 -- AUTO_INCREMENT for table `users`
 --
 ALTER TABLE `users`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=19;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=36;
 
 --
 -- Constraints for dumped tables

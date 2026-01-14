@@ -35,12 +35,16 @@ $count_judges = 0;
 $count_rounds = 0;
 
 if ($event_id) {
-    // A. Count Active Contestants
+    // A. Count Active Contestants (Official Candidates Only)
+    // FIX: Added filter to ignore Pending/Rejected applications
     $c_stmt = $conn->prepare("
         SELECT COUNT(*) as total 
         FROM users u 
         JOIN event_contestants ec ON u.id = ec.user_id 
-        WHERE ec.event_id = ? AND u.status = 'Active' AND ec.is_deleted = 0
+        WHERE ec.event_id = ? 
+        AND u.status = 'Active' 
+        AND ec.is_deleted = 0
+        AND ec.status IN ('Active', 'Qualified', 'Eliminated')
     ");
     $c_stmt->bind_param("i", $event_id);
     $c_stmt->execute();
@@ -76,7 +80,7 @@ unset($_SESSION['success'], $_SESSION['error'], $_SESSION['show_modal']);
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Event Manager Dashboard</title>
     <link rel="stylesheet" href="./assets/css/style.css?v=2">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="./assets/fontawesome/css/all.min.css">
     
     <style>
         /* Reuse Modal & Toast Styles */

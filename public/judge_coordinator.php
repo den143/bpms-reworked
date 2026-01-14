@@ -162,7 +162,7 @@ if (isset($_GET['error'])) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Judge Coordinator - BPMS</title>
     <link rel="stylesheet" href="./assets/css/style.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="./assets/fontawesome/css/all.min.css">
     <style>
         .status-badge { padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; }
         .status-badge.submitted { background-color: #D1FAE5; color: #059669; }

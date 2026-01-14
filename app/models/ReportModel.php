@@ -73,7 +73,7 @@ class ReportModel {
         }
 
         // 5. ROUNDS DATA
-        $sql_r = "SELECT id, title, status FROM rounds WHERE event_id = ? AND is_deleted = 0 ORDER BY ordering";
+        $sql_r = "SELECT id, title, status, qualify_count, type FROM rounds WHERE event_id = ? AND is_deleted = 0 ORDER BY ordering";        
         $stmt_r = $conn->prepare($sql_r);
         $stmt_r->bind_param("i", $event_id);
         $stmt_r->execute();

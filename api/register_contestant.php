@@ -1,114 +1,165 @@
 <?php
-// Purpose: Backend controller for Public Contestant Registration.
-// Handles self-registration, file uploads, and sets account status to 'Pending' for approval.
-
+// api/register_contestant.php
 session_start();
 require_once __DIR__ . '/../app/config/database.php';
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+// Enable error reporting for debugging
+mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
-    // 1. INPUT CAPTURE
-    $event_id = (int)$_POST['event_id'];
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    header("Location: ../public/register.php?error=Invalid Request");
+    exit;
+}
+
+// FLAG: Track if we started a transaction
+$transaction_started = false;
+
+try {
+    // 1. Sanitize Inputs
+    $event_id = intval($_POST['event_id']);
     $name     = trim($_POST['name']);
     $email    = trim($_POST['email']);
     $password = $_POST['password'];
-    
-    // Profile Details
-    $age      = (int)$_POST['age'];
-    $height   = trim($_POST['height']);
+    $age      = intval($_POST['age']);
+    $height   = floatval($_POST['height']);
+    $bust     = floatval($_POST['bust']);
+    $waist    = floatval($_POST['waist']);
+    $hips     = floatval($_POST['hips']);
     $hometown = trim($_POST['hometown']);
     $motto    = trim($_POST['motto']);
-    
-    // LOGIC: Parse "34-24-36" string into separate values for the new DB
-    $vitals_str = trim($_POST['vital_stats']);
-    $parts = preg_split('/[^0-9.]/', $vitals_str);
-    $bust  = !empty($_POST['bust']) ? (float)$_POST['bust'] : 0;
-    $waist = !empty($_POST['waist']) ? (float)$_POST['waist'] : 0;
-    $hips  = !empty($_POST['hips']) ? (float)$_POST['hips'] : 0;
 
-    // 2. VALIDATION
-    if (empty($name) || empty($email) || empty($password) || empty($event_id)) {
-        header("Location: ../public/register.php?error=All required fields must be filled.");
-        exit();
+    // 2. Validate
+    if (empty($event_id) || empty($name) || empty($email) || empty($password)) {
+        throw new Exception("All fields are required");
     }
 
-    // Logic: Prevent duplicate emails
-    $check = $conn->prepare("SELECT id FROM users WHERE email = ?");
-    $check->bind_param("s", $email);
-    $check->execute();
-    if ($check->get_result()->num_rows > 0) {
-        header("Location: ../public/register.php?error=Email is already registered. Please login.");
-        exit();
-    }
-
-    // 3. PHOTO UPLOADER
-    $photo_name = "default_contestant.png";
-    if (isset($_FILES['photo']) && $_FILES['photo']['error'] === 0) {
-        $allowed = ['jpg', 'jpeg', 'png'];
-        $ext = strtolower(pathinfo($_FILES['photo']['name'], PATHINFO_EXTENSION));
-        
-        // Security: Ensure only image files are uploaded
-        if (in_array($ext, $allowed)) {
-            $new_name = "contestant_" . time() . "." . $ext;
-            $upload_dir = __DIR__ . '/../public/assets/uploads/contestants/';
-            
-            if (move_uploaded_file($_FILES['photo']['tmp_name'], $upload_dir . $new_name)) {
-                $photo_name = $new_name;
-            } else {
-                header("Location: ../public/register.php?error=Failed to upload photo.");
-                exit();
-            }
-        } else {
-            header("Location: ../public/register.php?error=Invalid file type. Only JPG/PNG allowed.");
-            exit();
-        }
-    }
-
-    // 4. DATABASE TRANSACTION
-    // Purpose: Create User Account, Calculate Number, and Create Profile simultaneously.
+    // 3. Start Transaction
     $conn->begin_transaction();
+    $transaction_started = true;
 
-    try {
-        // Step A: Create User Account (Status = Pending)
-        // The user cannot login until an Admin approves this 'Pending' status.
-        $hashed_pass = password_hash($password, PASSWORD_DEFAULT);
-        $role = 'Contestant';
-        $status = 'Pending';
+    // 4. Handle File Upload (Do this early so we have the filename)
+    $photo_filename = 'default_contestant.png';
+    if (isset($_FILES['photo']) && $_FILES['photo']['error'] === UPLOAD_ERR_OK) {
+        $fileTmpPath = $_FILES['photo']['tmp_name'];
+        $originalName = $_FILES['photo']['name'];
+        $fileExtension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
         
-        $stmt1 = $conn->prepare("INSERT INTO users (name, email, password, role, status) VALUES (?, ?, ?, ?, ?)");
-        $stmt1->bind_param("sssss", $name, $email, $hashed_pass, $role, $status);
-        
-        if (!$stmt1->execute()) {
-            throw new Exception("Error creating user account.");
-        }
-        $user_id = $conn->insert_id; 
-
-        // Step B: Calculate Next Contestant Number
-        // The new DB requires a number. We find the max number for this event and add 1.
-        $num_q = $conn->query("SELECT MAX(contestant_number) as max_num FROM event_contestants WHERE event_id = $event_id");
-        $next_num = ($num_q->fetch_assoc()['max_num'] ?? 0) + 1;
-
-        // Step C: Create Contestant Profile
-        $stmt2 = $conn->prepare("INSERT INTO event_contestants (user_id, event_id, contestant_number, age, height, bust, waist, hips, hometown, motto, photo, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pending')");
-        $stmt2->bind_param("iiidddddsss", $user_id, $event_id, $next_num, $age, $height, $bust, $waist, $hips, $hometown, $motto, $photo_name);
-        
-        if (!$stmt2->execute()) {
-            throw new Exception("Error saving contestant details.");
+        $allowed = ['jpg', 'jpeg', 'png', 'gif'];
+        if (!in_array($fileExtension, $allowed)) {
+            throw new Exception("Invalid file type. Only JPG, PNG, GIF allowed.");
         }
 
-        // Commit changes
-        $conn->commit();
-        header("Location: ../public/register.php?success=Registration submitted! Please wait for approval.");
+        $uploadDir = __DIR__ . '/../public/assets/uploads/contestants/';
+        if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
 
-    } catch (Exception $e) {
-        $conn->rollback(); // Revert changes on error
-        header("Location: ../public/register.php?error=" . urlencode($e->getMessage()));
+        $newFileName = 'contestant_' . time() . '.' . $fileExtension;
+        $destPath = $uploadDir . $newFileName;
+
+        if (!move_uploaded_file($fileTmpPath, $destPath)) {
+            throw new Exception("Failed to upload photo");
+        }
+        $photo_filename = $newFileName;
     }
-    exit();
 
-} else {
-    // Block direct access
-    header("Location: ../public/register.php");
-    exit();
+    // 5. CHECK USER EXISTENCE LOGIC
+    $user_id = 0;
+    
+    // Check if email exists in 'users'
+    $stmt = $conn->prepare("SELECT id, password, role FROM users WHERE email = ?");
+    $stmt->bind_param("s", $email);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    
+    if ($row = $result->fetch_assoc()) {
+        // SCENARIO A: User Exists (Returning Contestant)
+
+        if ($row['role'] !== 'Contestant') {
+            throw new Exception("This email is already registered as a " . $row['role'] . ". Please use a different email to register as a Contestant.");
+        }
+        
+        // Security Check: Verify password matches the existing account
+        if (password_verify($password, $row['password'])) {
+            $user_id = $row['id'];
+
+            // Check if they are already in THIS specific event
+            $dupCheck = $conn->prepare("SELECT id FROM event_contestants WHERE event_id = ? AND user_id = ?");
+            $dupCheck->bind_param("ii", $event_id, $user_id);
+            $dupCheck->execute();
+            if ($dupCheck->get_result()->num_rows > 0) {
+                throw new Exception("You are already registered for this specific event.");
+            }
+            $dupCheck->close();
+
+        } else {
+            throw new Exception("This email is already registered. Please enter the correct password to join the new event.");
+        }
+    } else {
+        // SCENARIO B: New User (First time registering)
+        $stmt->close(); // Close previous statement
+
+        $hashed_password = password_hash($password, PASSWORD_DEFAULT);
+        $role = 'Contestant';
+        $status = 'Active';
+
+        $insertUser = $conn->prepare("INSERT INTO users (name, email, password, role, status, created_at) VALUES (?, ?, ?, ?, ?, NOW())");
+        $insertUser->bind_param("sssss", $name, $email, $hashed_password, $role, $status);
+        $insertUser->execute();
+        $user_id = $conn->insert_id;
+        $insertUser->close();
+    }
+    
+    // Note: If stmt wasn't closed in Scenario A, close it now
+    if (isset($stmt) && $stmt instanceof mysqli_stmt) {
+        // Attempting to close strictly if open, but PHP handles this usually.
+        // Re-using variable names requires care.
+    }
+
+    // 6. Calculate next Contestant Number for THIS Event
+    $stmt = $conn->prepare("SELECT MAX(contestant_number) as max_num FROM event_contestants WHERE event_id = ?");
+    $stmt->bind_param("i", $event_id);
+    $stmt->execute();
+    $res = $stmt->get_result()->fetch_assoc();
+    $next_number = ($res['max_num'] ?? 0) + 1;
+    $stmt->close();
+
+    // 7. Insert into 'event_contestants' table
+    $contestant_status = 'Pending';
+    
+    $stmt = $conn->prepare("INSERT INTO event_contestants 
+        (event_id, user_id, contestant_number, age, hometown, motto, height, bust, waist, hips, photo, status, registered_at) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())");
+    
+    $stmt->bind_param("iiiissddddss", 
+        $event_id, 
+        $user_id, 
+        $next_number, 
+        $age, 
+        $hometown, 
+        $motto, 
+        $height, 
+        $bust, 
+        $waist, 
+        $hips, 
+        $photo_filename,
+        $contestant_status
+    );
+    $stmt->execute();
+    $stmt->close();
+
+    // 8. Commit Transaction
+    $conn->commit();
+
+    header("Location: ../public/register.php?success=Registration successful! You may now login.");
+
+} catch (Exception $e) {
+    // 9. Rollback if error
+    if ($transaction_started) {
+        try {
+            $conn->rollback();
+        } catch (Exception $rollbackError) {
+            // Ignore
+        }
+    }
+    header("Location: ../public/register.php?error=" . urlencode($e->getMessage()));
 }
 ?>

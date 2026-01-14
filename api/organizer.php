@@ -48,8 +48,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $user_id = $existingUser['id'];
             
             // Logic: Update Name, Phone, Password, and Role.
+            // Also force status to 'Active' in case they were previously archived
             $hashed_pass = password_hash($pass, PASSWORD_DEFAULT);
-            $updateStmt = $conn->prepare("UPDATE users SET name=?, phone=?, password=?, role=? WHERE id=?");
+            $updateStmt = $conn->prepare("UPDATE users SET name=?, phone=?, password=?, role=?, status='Active' WHERE id=?");
             $updateStmt->bind_param("ssssi", $name, $phone, $hashed_pass, $role, $user_id);
             $updateStmt->execute();
 
@@ -70,7 +71,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         }
 
         // Step 2: Link User to Event (Using new table 'event_teams')
-        // We check if they are already in the team for this event, regardless of current status.
         $linkCheck = $conn->prepare("SELECT id FROM event_teams WHERE event_id = ? AND user_id = ?");
         $linkCheck->bind_param("ii", $event_id, $user_id);
         $linkCheck->execute();
@@ -93,10 +93,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
         // Step 3: Send Email Notification
         require_once __DIR__ . '/../app/core/CustomMailer.php';
+        // Make sure this matches your environment
         $site_link = "https://juvenal-esteban-octavalent.ngrok-free.dev/bpms_v2/public/index.php"; 
 
         $evt_name = "the Event";
-        // UPDATED: Column 'title'
         $e_query = $conn->query("SELECT title FROM events WHERE id = $event_id");
         if ($row = $e_query->fetch_assoc()) $evt_name = $row['title'];
 
@@ -173,8 +173,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $stmt->execute();
 
         // SYNC: Update Role in Event Teams as well
-        // Since 'role' is also stored in 'event_teams' now, we must sync it.
-        // This updates the role for this user across all events they are assigned to (assuming role consistency).
         $stmt2 = $conn->prepare("UPDATE event_teams SET role=? WHERE user_id=?");
         $stmt2->bind_param("si", $role, $user_id);
         $stmt2->execute();
@@ -196,34 +194,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     exit();
 }
 
-// ACTION 3: REMOVE / RESTORE / ARCHIVE
+// ACTION 3: REMOVE / RESTORE / ARCHIVE (FIXED LOGIC)
 if (isset($_GET['action']) && isset($_GET['id'])) {
     $link_id = (int)$_GET['id']; // This is event_teams.id
     $type = $_GET['action'];
 
-    if ($type === 'delete') {
-        $stmt = $conn->prepare("UPDATE event_teams SET is_deleted = 1 WHERE id = ?");
-        $stmt->bind_param("i", $link_id);
-        $redirect_view = 'archived'; 
-        $msg = "Organizer removed permanently from list.";
+    $conn->begin_transaction();
+    try {
+        // 1. FETCH USER ID (Needed to update the 'users' table)
+        $q = $conn->query("SELECT user_id FROM event_teams WHERE id = $link_id");
+        if ($q->num_rows === 0) {
+             throw new Exception("Organizer not found in event list");
+        }
+        $target_user_id = $q->fetch_assoc()['user_id'];
 
-    } elseif ($type === 'restore') {
-        $stmt = $conn->prepare("UPDATE event_teams SET status = 'Active', is_deleted = 0 WHERE id = ?");
-        $stmt->bind_param("i", $link_id);
-        $redirect_view = 'archived'; 
-        $msg = "Organizer restored successfully.";
+        if ($type === 'delete') {
+            // Update Team Link (Hide from list)
+            $conn->query("UPDATE event_teams SET is_deleted = 1 WHERE id = $link_id");
+            
+            // SYNC: Disable User Login
+            $conn->query("UPDATE users SET status = 'Inactive' WHERE id = $target_user_id");
 
-    } else {
-        $stmt = $conn->prepare("UPDATE event_teams SET status = 'Inactive' WHERE id = ?");
-        $stmt->bind_param("i", $link_id);
-        $redirect_view = 'active'; 
-        $msg = "Organizer moved to archive.";
-    }
+            $redirect_view = 'archived'; 
+            $msg = "Organizer removed permanently.";
 
-    if ($stmt->execute()) {
+        } elseif ($type === 'restore') {
+            // Update Team Link (Show in list)
+            $conn->query("UPDATE event_teams SET status = 'Active', is_deleted = 0 WHERE id = $link_id");
+
+            // SYNC: Re-enable User Login
+            $conn->query("UPDATE users SET status = 'Active' WHERE id = $target_user_id");
+
+            $redirect_view = 'archived'; 
+            $msg = "Organizer restored successfully.";
+
+        } else {
+            // Archive (Move to Archive tab)
+            $conn->query("UPDATE event_teams SET status = 'Inactive' WHERE id = $link_id");
+
+            // SYNC: Disable User Login
+            $conn->query("UPDATE users SET status = 'Inactive' WHERE id = $target_user_id");
+
+            $redirect_view = 'active'; 
+            $msg = "Organizer moved to archive.";
+        }
+
+        $conn->commit();
         header("Location: ../public/organizers.php?view=$redirect_view&success=" . urlencode($msg));
-    } else {
-        header("Location: ../public/organizers.php?error=Action failed");
+
+    } catch (Exception $e) {
+        $conn->rollback();
+        header("Location: ../public/organizers.php?error=" . urlencode($e->getMessage()));
     }
     exit();
 }

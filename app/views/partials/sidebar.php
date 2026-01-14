@@ -70,5 +70,5 @@ $current_page = basename($_SERVER['PHP_SELF']);
     processQueue();
 
     // Optionally run every 30 seconds to catch new emails if you stay on the same page
-    setInterval(processQueue, 30000); 
+    setInterval(processQueue, 60000); 
 </script>

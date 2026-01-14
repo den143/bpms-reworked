@@ -40,7 +40,7 @@ if ($active_event) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Manage Rounds - BPMS</title>
     <link rel="stylesheet" href="./assets/css/style.css?v=6">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="./assets/fontawesome/css/all.min.css">
 </head>
 <body>
 
@@ -245,8 +245,19 @@ if ($active_event) {
         function toggleAdvanceInput() {
             const rule = document.getElementById('r_rule').value;
             const group = document.getElementById('advanceGroup');
-            // FIX: Check against 'Final' instead of 'winner'
-            group.style.display = (rule === 'Final') ? 'none' : 'block';
+            const input = document.getElementById('r_advance'); // Select the input field
+
+            if (rule === 'Final') {
+                // CASE: Final Round
+                group.style.display = 'none';       // 1. Hide the input
+                input.removeAttribute('required');  // 2. REMOVE 'required' so form can submit
+                input.value = '1';                  // 3. Auto-set to 1 (Winner) so database is happy
+            } else {
+                // CASE: Elimination Round
+                group.style.display = 'block';      // 1. Show the input
+                input.setAttribute('required', 'required'); // 2. Restore 'required'
+                input.value = '';                   // 3. Clear value so user must type it
+            }
         }
 
         // --- TRAFFIC CONTROLLER LOGIC ---
