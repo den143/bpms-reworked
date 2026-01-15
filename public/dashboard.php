@@ -16,61 +16,58 @@ $active_event = $event_result->fetch_assoc();
 $event_id = $active_event['id'] ?? null;
 $event_title = $active_event['title'] ?? "No Active Event";
 $event_venue = $active_event['venue'] ?? "No Venue Selected";
-$event_date_str = $active_event['event_date'] ?? null;
 
-// 2. Calculate "Days to Go"
-$days_to_go = 0;
-if ($event_date_str) {
-    $event_date = new DateTime($event_date_str);
-    $today = new DateTime();
-    if ($event_date > $today) {
-        $interval = $today->diff($event_date);
-        $days_to_go = $interval->days;
-    }
+// DATE FORMATTING (Fix: June 20, 2026)
+$raw_date = $active_event['event_date'] ?? null;
+$event_date_str = "TBA";
+if ($raw_date) {
+    $event_date_str = date("F d, Y", strtotime($raw_date));
 }
 
-// 3. FETCH REAL COUNTS
+// 2. FETCH REAL COUNTS
 $count_contestants = 0;
 $count_judges = 0;
 $count_rounds = 0;
+$count_criteria = 0;
 
 if ($event_id) {
-    // A. Count Active Contestants (Official Candidates Only)
-    // FIX: Added filter to ignore Pending/Rejected applications
-    $c_stmt = $conn->prepare("
-        SELECT COUNT(*) as total 
-        FROM users u 
-        JOIN event_contestants ec ON u.id = ec.user_id 
-        WHERE ec.event_id = ? 
-        AND u.status = 'Active' 
-        AND ec.is_deleted = 0
-        AND ec.status IN ('Active', 'Qualified', 'Eliminated')
-    ");
+    // Count Contestants
+    $c_stmt = $conn->prepare("SELECT COUNT(*) as total FROM event_contestants WHERE event_id = ? AND is_deleted = 0");
     $c_stmt->bind_param("i", $event_id);
     $c_stmt->execute();
     $count_contestants = $c_stmt->get_result()->fetch_assoc()['total'];
 
-    // B. Count Active Judges
-    $j_stmt = $conn->prepare("
-        SELECT COUNT(*) as total 
-        FROM event_judges 
-        WHERE event_id = ? AND status = 'Active' AND is_deleted = 0
-    ");
+    // Count Judges
+    $j_stmt = $conn->prepare("SELECT COUNT(*) as total FROM event_judges WHERE event_id = ? AND status = 'Active' AND is_deleted = 0");
     $j_stmt->bind_param("i", $event_id);
     $j_stmt->execute();
     $count_judges = $j_stmt->get_result()->fetch_assoc()['total'];
     
-    // C. Count Rounds
+    // Count Rounds
     $r_stmt = $conn->prepare("SELECT COUNT(*) as total FROM rounds WHERE event_id = ? AND is_deleted = 0");
     $r_stmt->bind_param("i", $event_id);
     $r_stmt->execute();
     $count_rounds = $r_stmt->get_result()->fetch_assoc()['total'];
+
+    // Count Criteria (To verify if Segments/Criteria are set up)
+    // We join rounds -> segments -> criteria to get the total count for this event
+    $crit_sql = "
+        SELECT COUNT(c.id) as total 
+        FROM criteria c
+        JOIN segments s ON c.segment_id = s.id
+        JOIN rounds r ON s.round_id = r.id
+        WHERE r.event_id = ? AND c.is_deleted = 0 AND s.is_deleted = 0
+    ";
+    $crit_stmt = $conn->prepare($crit_sql);
+    $crit_stmt->bind_param("i", $event_id);
+    $crit_stmt->execute();
+    $count_criteria = $crit_stmt->get_result()->fetch_assoc()['total'];
 }
 
-// Capture session messages
+// Session messages
 $success = $_SESSION['success'] ?? null;
 $error   = $_SESSION['error'] ?? null;
-unset($_SESSION['success'], $_SESSION['error'], $_SESSION['show_modal']);
+unset($_SESSION['success'], $_SESSION['error']);
 ?>
 
 <!DOCTYPE html>
@@ -78,18 +75,12 @@ unset($_SESSION['success'], $_SESSION['error'], $_SESSION['show_modal']);
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Event Manager Dashboard</title>
+    <title>Dashboard - <?= htmlspecialchars($event_title) ?></title>
     <link rel="stylesheet" href="./assets/css/style.css?v=2">
     <link rel="stylesheet" href="./assets/fontawesome/css/all.min.css">
     
     <style>
-        /* Reuse Modal & Toast Styles */
-        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: none; justify-content: center; align-items: center; z-index: 1000; }
-        .modal-content { background: white; padding: 25px; width: 400px; border-radius: 8px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); text-align: center; }
-        .modal-content input { width: 90%; margin: 10px 0; padding: 10px; border:1px solid #ddd; border-radius:4px; }
-        .btn-create { background-color: #28a745; color: white; border: none; padding: 10px 20px; cursor: pointer; width: 100%; border-radius:4px; }
-        
-        /* Dashboard Specific Grid */
+        /* Dashboard Specific Styles */
         .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; margin-bottom: 30px; }
         .stat-card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); display: flex; align-items: center; gap: 20px; transition: transform 0.2s; border-bottom: 4px solid transparent; }
         .stat-card:hover { transform: translateY(-5px); border-bottom-color: #F59E0B; }
@@ -101,7 +92,7 @@ unset($_SESSION['success'], $_SESSION['error'], $_SESSION['show_modal']);
         .dashboard-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; }
         .card-section { background: white; border-radius: 12px; padding: 25px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
         .card-title { font-size: 18px; font-weight: bold; color: #374151; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #f3f4f6; }
-        .checklist { list-style: none; }
+        .checklist { list-style: none; padding: 0; }
         .checklist-item { display: flex; align-items: center; padding: 15px 0; border-bottom: 1px solid #f9fafb; }
         .checklist-item:last-child { border-bottom: none; }
         
@@ -115,24 +106,22 @@ unset($_SESSION['success'], $_SESSION['error'], $_SESSION['show_modal']);
         .btn-action { display: inline-block; margin-left: auto; padding: 6px 12px; background-color: #f3f4f6; color: #374151; text-decoration: none; border-radius: 6px; font-size: 12px; transition: background 0.2s; }
         .btn-action:hover { background-color: #e5e7eb; }
         
-        /* --- NEW QUICK ACTIONS STYLES --- */
+        /* Quick Actions */
         .quick-actions-list { display: flex; flex-direction: column; gap: 10px; }
-        .btn-quick {
-            display: flex; align-items: center; justify-content: flex-start;
-            padding: 12px 15px; border-radius: 8px; text-decoration: none; 
-            font-weight: 600; font-size: 14px; transition: all 0.2s;
-        }
+        .btn-quick { display: flex; align-items: center; justify-content: flex-start; padding: 12px 15px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px; transition: all 0.2s; }
         .btn-quick i { margin-right: 10px; width: 20px; text-align: center; }
-        
         .btn-quick.primary { background-color: #F59E0B; color: white; }
         .btn-quick.primary:hover { background-color: #d97706; transform: translateX(5px); }
-        
         .btn-quick.secondary { background-color: #f3f4f6; color: #374151; }
         .btn-quick.secondary:hover { background-color: #e5e7eb; color: #111827; transform: translateX(5px); }
 
-        @media (max-width: 900px) {
-            .dashboard-grid { grid-template-columns: 1fr; }
-        }
+        /* Modal */
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: none; justify-content: center; align-items: center; z-index: 1000; }
+        .modal-content { background: white; padding: 25px; width: 400px; border-radius: 8px; text-align: center; }
+        .modal-content input { width: 90%; margin: 10px 0; padding: 10px; border:1px solid #ddd; }
+        .btn-create { background-color: #28a745; color: white; border: none; padding: 10px; width: 100%; cursor: pointer; }
+
+        @media (max-width: 900px) { .dashboard-grid { grid-template-columns: 1fr; } }
     </style>
 </head>
 <body>
@@ -141,8 +130,34 @@ unset($_SESSION['success'], $_SESSION['error'], $_SESSION['show_modal']);
 
     <div class="main-wrapper">
         
-        <?php require_once __DIR__ . '/../app/views/partials/sidebar.php'; ?>
-
+        <div class="sidebar" style="display: flex; flex-direction: column;">
+            <div class="sidebar-header">
+                <img src="assets/images/BPMS_logo.png" alt="BPMS Logo" class="sidebar-logo">
+                <div class="brand-text">
+                    <div class="brand-name">BPMS</div>
+                    <div class="brand-subtitle">Event Manager</div>
+                </div>
+            </div>
+            <ul class="sidebar-menu">
+                <li><a href="dashboard.php" class="active"><i class="fas fa-chart-pie"></i> <span>Dashboard</span></a></li>
+                <li><a href="organizers.php"><i class="fas fa-user-tie"></i> <span>Manage Organizers</span></a></li>
+                <li><a href="contestants.php"><i class="fas fa-female"></i> <span>Register Contestants</span></a></li>
+                <li><a href="judges.php"><i class="fas fa-gavel"></i> <span>Manage Judges</span></a></li>
+                <li><a href="rounds.php"><i class="fas fa-layer-group"></i> <span>Manage Rounds</span></a></li>
+                <li><a href="criteria.php"><i class="fas fa-list-alt"></i> <span>Segments & Criteria</span></a></li>
+                <li><a href="activities.php"><i class="fas fa-calendar-check"></i> <span>Manage Activities</span></a></li>
+                <li><a href="awards.php"><i class="fas fa-trophy"></i> <span>Manage Awards</span></a></li>
+                <li><a href="tabulator.php"><i class="fas fa-print"></i> <span>Tabulation & Reports</span></a></li>
+            </ul>
+            <div class="sidebar-footer">
+                <a href="settings.php" style="display: flex; align-items: center; margin-bottom: 15px; text-decoration: none; color: #cbd5e1;">
+                    <i class="fas fa-cog" style="width: 25px;"></i> <span>Settings</span>
+                </a>
+                <a href="logout.php" onclick="return confirm('Logout?');" style="display: flex; align-items: center; color: #ef4444; text-decoration: none;">
+                    <i class="fas fa-sign-out-alt" style="width: 25px;"></i> <span>Logout</span>
+                </a>
+            </div>
+        </div>
         <div class="content-area">
             
             <div class="navbar">
@@ -150,7 +165,7 @@ unset($_SESSION['success'], $_SESSION['error'], $_SESSION['show_modal']);
                     <button class="menu-toggle" onclick="toggleSidebar()">
                         <i class="fas fa-bars"></i>
                     </button>
-                    <div class="navbar-title">Event Manager</div>
+                    <div class="navbar-title">Dashboard</div>
                 </div>
             </div>
 
@@ -163,7 +178,7 @@ unset($_SESSION['success'], $_SESSION['error'], $_SESSION['show_modal']);
                     <div class="event-meta">
                         <span><i class="fas fa-map-marker-alt"></i> <?= htmlspecialchars($event_venue) ?></span>
                         <span style="margin: 0 10px;">|</span>
-                        <span><i class="fas fa-calendar-alt"></i> <?= htmlspecialchars($event_date_str ?? 'TBA') ?></span>
+                        <span><i class="fas fa-calendar-alt"></i> <?= htmlspecialchars($event_date_str) ?></span>
                     </div>
                 </div>
 
@@ -193,10 +208,10 @@ unset($_SESSION['success'], $_SESSION['error'], $_SESSION['show_modal']);
                     </div>
 
                     <div class="stat-card">
-                        <div class="stat-icon"><i class="fas fa-hourglass-half"></i></div>
+                        <div class="stat-icon"><i class="fas fa-calendar-day"></i></div>
                         <div class="stat-info">
-                            <h3><?= $days_to_go ?></h3>
-                            <p>Days to Go</p>
+                            <h3 style="font-size: 18px;"><?= $event_date_str ?></h3>
+                            <p>Event Date</p>
                         </div>
                     </div>
                 </div>
@@ -204,13 +219,13 @@ unset($_SESSION['success'], $_SESSION['error'], $_SESSION['show_modal']);
                 <div class="dashboard-grid">
                     
                     <div class="card-section">
-                        <div class="card-title">Setup Progress</div>
+                        <div class="card-title">Setup Checklist</div>
                         <ul class="checklist">
                             <li class="checklist-item">
                                 <div class="check-icon done"><i class="fas fa-check"></i></div>
                                 <div class="task-content">
                                     <strong>Create Event</strong>
-                                    <span>Event details and venue are set.</span>
+                                    <span>Event details created.</span>
                                 </div>
                                 <a href="settings.php" class="btn-action">View</a>
                             </li>
@@ -221,9 +236,9 @@ unset($_SESSION['success'], $_SESSION['error'], $_SESSION['show_modal']);
                                 </div>
                                 <div class="task-content">
                                     <strong>Register Contestants</strong>
-                                    <span><?= $count_contestants > 0 ? $count_contestants . ' Official Candidates ready.' : 'No contestants added yet.' ?></span>
+                                    <span><?= $count_contestants ?> Candidates added.</span>
                                 </div>
-                                <a href="contestants.php" class="btn-action">Manage</a>
+                                <a href="contestants.php" class="btn-action">Add</a>
                             </li>
 
                             <li class="checklist-item">
@@ -232,20 +247,31 @@ unset($_SESSION['success'], $_SESSION['error'], $_SESSION['show_modal']);
                                 </div>
                                 <div class="task-content">
                                     <strong>Register Judges</strong>
-                                    <span><?= $count_judges > 0 ? $count_judges . ' Judges ready.' : 'Recruit judges for scoring.' ?></span>
+                                    <span><?= $count_judges ?> Judges added.</span>
                                 </div>
-                                <a href="judges.php" class="btn-action">Manage</a>
+                                <a href="judges.php" class="btn-action">Add</a>
                             </li>
 
-                             <li class="checklist-item">
+                            <li class="checklist-item">
                                 <div class="check-icon <?= $count_rounds > 0 ? 'done' : 'pending' ?>">
                                     <i class="fas <?= $count_rounds > 0 ? 'fa-check' : 'fa-exclamation' ?>"></i>
                                 </div>
                                 <div class="task-content">
-                                    <strong>Setup Rounds & Criteria</strong>
-                                    <span>Define rounds, segments, and criteria.</span>
+                                    <strong>Setup Rounds</strong>
+                                    <span><?= $count_rounds ?> Rounds configured.</span>
                                 </div>
                                 <a href="rounds.php" class="btn-action">Setup</a>
+                            </li>
+
+                            <li class="checklist-item">
+                                <div class="check-icon <?= $count_criteria > 0 ? 'done' : 'pending' ?>">
+                                    <i class="fas <?= $count_criteria > 0 ? 'fa-check' : 'fa-exclamation' ?>"></i>
+                                </div>
+                                <div class="task-content">
+                                    <strong>Setup Segments & Criteria</strong>
+                                    <span><?= $count_criteria ?> Scoring Criteria set.</span>
+                                </div>
+                                <a href="criteria.php" class="btn-action">Setup</a>
                             </li>
                         </ul>
                     </div>
@@ -256,12 +282,13 @@ unset($_SESSION['success'], $_SESSION['error'], $_SESSION['show_modal']);
                             <div class="quick-actions-list">
                                 
                                 <a href="live_screen.php" target="_blank" class="btn-quick primary">
-                                    <i class="fas fa-desktop"></i> Launch Live Screen
+                                    <i class="fas fa-desktop"></i> Open Results Screen
                                 </a>
 
                                 <a href="tabulator.php" class="btn-quick primary">
-                                    <i class="fas fa-chart-line"></i> Live Tabulation
+                                    <i class="fas fa-table"></i> Tabulation Sheet
                                 </a>
+
                                 <a href="print_report.php" class="btn-quick secondary">
                                     <i class="fas fa-print"></i> Generate Reports
                                 </a>
@@ -302,21 +329,20 @@ unset($_SESSION['success'], $_SESSION['error'], $_SESSION['show_modal']);
     <?php endif; ?>
 
     <script>
-        // MOBILE SIDEBAR TOGGLE
         function toggleSidebar() {
             const sidebar = document.querySelector('.sidebar');
             const overlay = document.getElementById('sidebarOverlay');
             
             if (sidebar.style.left === '0px') {
-                sidebar.style.left = '-280px'; // Close
+                sidebar.style.left = '-280px'; 
                 overlay.style.display = 'none';
             } else {
-                sidebar.style.left = '0px'; // Open
+                sidebar.style.left = '0px'; 
                 overlay.style.display = 'block';
             }
         }
 
-        // Toast Notification Logic
+        // Simple Toast Logic
         function showToast(message, type = 'success') {
             const container = document.getElementById('toast-container');
             const toast = document.createElement('div');
@@ -325,7 +351,7 @@ unset($_SESSION['success'], $_SESSION['error'], $_SESSION['show_modal']);
             toast.innerHTML = `${icon} <span>${message}</span>`;
             container.appendChild(toast);
             setTimeout(() => {
-                toast.style.animation = 'fadeOut 0.5s ease-out forwards';
+                toast.style.opacity = '0';
                 setTimeout(() => { toast.remove(); }, 500);
             }, 3000);
         }

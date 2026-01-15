@@ -4,393 +4,392 @@ require_once __DIR__ . '/../app/core/guard.php';
 requireLogin();
 
 if (!in_array($_SESSION['role'], ['Event Manager', 'Tabulator', 'Judge Coordinator'])) {
-    die("<h1>Access Denied</h1>");
+    die("Access Denied");
 }
 
 require_once __DIR__ . '/../app/config/database.php';
 
 $uid = $_SESSION['user_id'];
-$event_name = "BPMS Live";
+$event_title = "BPMS Live";
 $event_id = 0;
 
-// Fetch Event Context
+// 1. Fetch Event
 if ($_SESSION['role'] === 'Event Manager') {
-    // UPDATED: Column 'manager_id' and 'title'
     $stmt = $conn->prepare("SELECT id, title FROM events WHERE manager_id = ? AND status = 'Active' LIMIT 1");
     $stmt->bind_param("i", $uid);
-    $stmt->execute();
-    $evt = $stmt->get_result()->fetch_assoc();
 } else {
-    // UPDATED: Table 'event_teams' and Column 'title'
     $stmt = $conn->prepare("
         SELECT e.id, e.title 
         FROM events e 
         JOIN event_teams et ON e.id = et.event_id 
-        WHERE et.user_id = ? AND et.status = 'Active' AND e.status = 'Active'
-        LIMIT 1
-    ");
+        WHERE et.user_id = ? AND et.status = 'Active' AND e.status = 'Active' LIMIT 1");
     $stmt->bind_param("i", $uid);
-    $stmt->execute();
-    $evt = $stmt->get_result()->fetch_assoc();
 }
+$stmt->execute();
+$evt = $stmt->get_result()->fetch_assoc();
 
 if ($evt) {
     $event_id = $evt['id'];
-    $event_name = $evt['title'];
+    $event_title = $evt['title'];
 } else {
-    die("<div style='color:white;text-align:center;padding:50px;background:#111;font-family:sans-serif;'><h1>No Active Event Found</h1></div>");
+    die("No Active Event Found.");
 }
 
-// Fetch Rounds (Filtered by is_deleted=0)
-$r_stmt = $conn->prepare("SELECT id, title, status FROM rounds WHERE event_id = ? AND is_deleted = 0 ORDER BY ordering");
+// 2. Fetch Rounds
+$r_stmt = $conn->prepare("SELECT id, title, ordering, qualify_count, type FROM rounds WHERE event_id = ? AND is_deleted = 0 ORDER BY ordering");
 $r_stmt->bind_param("i", $event_id);
 $r_stmt->execute();
 $rounds = $r_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+// 3. AJAX Data Handler
+if (isset($_GET['fetch_rows']) && isset($_GET['round_id'])) {
+    $selected_round_id = $_GET['round_id'];
+    $mode = $_GET['mode'] ?? 'list';
+
+    // Get Round Details & STATUS
+    $rd_stmt = $conn->prepare("SELECT ordering, qualify_count, type, status FROM rounds WHERE id = ?");
+    $rd_stmt->bind_param("i", $selected_round_id);
+    $rd_stmt->execute();
+    $rd = $rd_stmt->get_result()->fetch_assoc();
+    
+    $limit = $rd['qualify_count'];
+    $is_final = ($rd['type'] === 'Final');
+    $round_order = $rd['ordering'];
+    $round_status = $rd['status'];
+
+    // CHECK: IS ROUND LOCKED?
+    if ($mode === 'rank' && $round_status !== 'Completed') {
+        echo "<tr>
+                <td colspan='3' style='text-align:center; padding:100px;'>
+                    <div style='color: #dc2626; font-size: 3em; margin-bottom: 10px;'><i class='fas fa-lock'></i></div>
+                    <div style='font-size: 2em; font-weight: bold; color: #374151;'>RESULTS HIDDEN</div>
+                    <div style='font-size: 1.2em; color: #6b7280; margin-top: 10px;'>
+                        This round is currently <strong>" . htmlspecialchars($round_status) . "</strong>.<br>
+                        The Tabulator must <strong>LOCK</strong> the round before results can be viewed.
+                    </div>
+                </td>
+              </tr>";
+        exit;
+    }
+
+    $order_clause = ($mode === 'list') ? "ec.contestant_number ASC" : "final_score DESC";
+    $join_type = ($round_order == 1) ? "LEFT JOIN" : "INNER JOIN";
+
+    $sql = "
+        SELECT 
+            ec.id,
+            u.name, 
+            ec.photo, 
+            ec.contestant_number, 
+            COALESCE(AVG(judge_sub.judge_total), 0) as final_score
+        FROM event_contestants ec
+        JOIN users u ON ec.user_id = u.id
+        $join_type (
+            SELECT 
+                s.contestant_id,
+                s.judge_id,
+                SUM(s.score_value * (seg.weight_percent / 100.0)) as judge_total
+            FROM scores s
+            JOIN criteria c ON s.criteria_id = c.id
+            JOIN segments seg ON c.segment_id = seg.id
+            WHERE seg.round_id = ?
+            GROUP BY s.contestant_id, s.judge_id
+        ) judge_sub ON ec.id = judge_sub.contestant_id
+        WHERE ec.event_id = ? AND ec.is_deleted = 0
+        GROUP BY ec.id
+        ORDER BY $order_clause
+    ";
+
+    $q_stmt = $conn->prepare($sql);
+    $q_stmt->bind_param("ii", $selected_round_id, $event_id);
+    $q_stmt->execute();
+    $rankings = $q_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+    if (empty($rankings)) {
+        echo "<tr><td colspan='3' style='text-align:center; padding:50px; color:#999; font-size:1.5em;'>No contestants found for this round.</td></tr>";
+    } else {
+        $rank = 1;
+        foreach($rankings as $row) {
+            $score = number_format($row['final_score'], 2);
+            $name = htmlspecialchars($row['name']);
+            $num = $row['contestant_number'];
+            $photo = htmlspecialchars($row['photo']);
+            
+            // --- LOGIC: Highlight Winners ---
+            $rowClass = "";
+            
+            if ($mode === 'rank') {
+                if ($rank <= $limit) {
+                    if ($is_final && $rank == 1) {
+                        $rowClass = "row-winner"; 
+                    } else {
+                        $rowClass = "row-qualified"; 
+                    }
+                } else {
+                    $rowClass = "row-eliminated"; 
+                }
+            }
+
+            echo "<tr class='{$rowClass}'>
+                    <td class='rank-col'>";
+            
+            if($mode === 'rank') {
+                echo "#" . $rank;
+            } else {
+                echo "<i class='fas fa-user' style='color:#ccc;'></i>";
+            }
+            
+            echo "  </td>
+                    <td>
+                        <img src='./assets/uploads/contestants/{$photo}' class='c-img' onerror=\"this.src='./assets/images/default_user.png'\">
+                        <div style='display:inline-block; vertical-align:middle;'>
+                            <div style='font-size:0.9em; color:#6b7280; font-weight:bold;'>CANDIDATE #{$num}</div>
+                            <div>{$name}</div>
+                        </div>
+                    </td>
+                    <td style='text-align:right;'>";
+            
+            if($mode === 'rank') {
+                echo "<span class='score-display'>{$score}</span>";
+            } else {
+                echo "<span style='color:#ccc; font-style:italic; font-size:0.8em;'>--</span>";
+            }
+
+            echo "  </td>
+                  </tr>";
+            $rank++;
+        }
+    }
+    exit; 
+}
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LIVE: <?= htmlspecialchars($event_name) ?></title>
-<link rel="stylesheet" href="./assets/fontawesome/css/all.min.css">
-<style>
-    /* --- BASE CINEMATIC LAYOUT --- */
-    body { margin: 0; background: #0f172a; color: white; font-family: 'Segoe UI', sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Results - <?= htmlspecialchars($event_title) ?></title>
     
-    /* Header Animation */
-    #header { height: 15vh; display: flex; flex-direction: column; justify-content: center; align-items: center; background: linear-gradient(to bottom, #1e293b, #0f172a); border-bottom: 4px solid #F59E0B; z-index: 10; box-shadow: 0 10px 30px rgba(0,0,0,0.5); transition: margin-top 0.5s; }
-    h1 { font-size: 2vh; letter-spacing: 0.3em; color: #94a3b8; margin:0; text-transform: uppercase; }
-    h2 { font-size: 5vh; margin: 5px 0 0 0; color: #fff; font-weight: 800; text-transform: uppercase; text-shadow: 0 2px 10px rgba(0,0,0,0.5); }
-    
-    /* Status Pills */
-    .status-pill { padding: 5px 15px; border-radius: 20px; font-size: 12px; font-weight: bold; margin-top: 10px; display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.3); }
-    .pill-active { background: #059669; color: white; animation: pulse 2s infinite; }
-    .pill-locked { background: #dc2626; color: white; }
-    .pill-standby { background: #475569; color: #cbd5e1; }
+    <link rel="stylesheet" href="./assets/css/style.css"> 
+    <link rel="stylesheet" href="./assets/fontawesome/css/all.min.css">
 
-    @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(5, 150, 105, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(5, 150, 105, 0); } 100% { box-shadow: 0 0 0 0 rgba(5, 150, 105, 0); } }
+    <style>
+        /* --- BACKGROUND: CLEAN & PLAIN --- */
+        body { 
+            background-color: #f4f6f9;
+            font-family: 'Segoe UI', sans-serif; 
+            height: 100vh; 
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center; 
+            overflow: hidden;
+        }
+        
+        /* Container Card - MAXIMIZED */
+        .live-container { 
+            position: relative; 
+            width: 95%; 
+            max-width: 1400px; 
+            height: 92vh; 
+            background: white; 
+            padding: 15px 15px 0 15px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            display: flex; 
+            flex-direction: column;
+            border: 1px solid #e5e7eb;
+        }
 
-    /* --- STAGE --- */
-    #stage { flex-grow: 1; position: relative; overflow-y: auto; overflow-x: hidden; padding-top: 20px; display: flex; flex-direction: column; align-items: center; background: radial-gradient(circle at center, #1e293b 0%, #0f172a 70%); }
-    
-    .table-header { width: 85%; display: flex; padding: 15px 30px; margin-bottom: 10px; color: #64748b; font-weight: 700; text-transform: uppercase; font-size: 1vw; letter-spacing: 2px; border-bottom: 1px solid #334155; }
-    .th-rank { width: 80px; text-align: center; }
-    .th-img  { width: 90px; } 
-    .th-name { flex-grow: 1; padding-left: 20px; }
-    .th-score { width: 180px; text-align: right; }
+        /* Fullscreen Overrides */
+        body:fullscreen { padding: 0; background: #fff; display: block; }
+        body:fullscreen .live-container {
+            width: 100%; max-width: 100%; height: 100vh;
+            border-radius: 0; padding: 20px; box-shadow: none; border: none;
+        }
 
-    .ranking-container { position: relative; width: 85%; transition: height 0.5s; }
+        /* Header */
+        .header-section { text-align: center; margin-bottom: 10px; border-bottom: 2px solid #F59E0B; padding-bottom: 10px; }
+        .header-section h1 { margin: 0; color: #1f2937; font-size: 2.2em; text-transform: uppercase; }
+        .header-section p { color: #6b7280; margin-top: 5px; font-size: 1.1em; }
 
-    /* --- RANK CARDS --- */
-    .rank-row {
-        position: absolute; 
-        width: 100%;
-        height: 80px; /* Fixed Height */
-        display: flex;
-        align-items: center;
-        background: rgba(30, 41, 59, 0.6);
-        border: 1px solid rgba(255, 255, 255, 0.05);
-        border-radius: 12px;
-        padding: 0 30px;
-        box-sizing: border-box;
-        margin-bottom: 10px;
-        transition: top 1.5s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.3s, opacity 0.5s, transform 0.5s, border 0.3s;
-        backdrop-filter: blur(5px);
-    }
+        /* Controls Panel */
+        .controls-panel {
+            display: flex; justify-content: space-between; align-items: center;
+            background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0;
+            margin-bottom: 10px; flex-wrap: wrap; gap: 10px; flex-shrink: 0;
+        }
 
-    /* Columns */
-    .cell-rank { width: 80px; text-align: center; font-weight: 900; font-size: 2.2em; color: #64748b; font-family: 'Segoe UI', sans-serif; text-shadow: 0 2px 4px rgba(0,0,0,0.3); }
-    .cell-img  { width: 90px; display: flex; justify-content: center; }
-    .t-avatar { width: 60px; height: 60px; border-radius: 50%; object-fit: cover; border: 3px solid #334155; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
-    .cell-name { flex-grow: 1; font-weight: 700; font-size: 1.8vw; padding-left: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #f1f5f9; }
-    .cell-score { width: 180px; text-align: right; font-weight: 800; font-size: 2vw; color: #F59E0B; font-family: 'Courier New', monospace; letter-spacing: -1px; }
+        /* Buttons & Selects */
+        .mode-group { display: flex; gap: 10px; }
+        .btn-mode {
+            padding: 8px 16px; border: 1px solid #cbd5e1; background: white; 
+            border-radius: 6px; cursor: pointer; font-weight: 600; color: #64748b;
+            transition: 0.2s; display: flex; align-items: center; gap: 8px;
+        }
+        .btn-mode:hover { background: #f1f5f9; }
+        .btn-mode.active { background: #3b82f6; color: white; border-color: #3b82f6; box-shadow: 0 2px 5px rgba(59, 130, 246, 0.3); }
 
-    /* --- MODES & ANIMATIONS --- */
-    
-    /* 1. STANDBY: Blur scores, Hide Rank */
-    .mode-standby .cell-score span { filter: blur(20px); opacity: 0; }
-    .mode-standby .cell-rank { opacity: 0; transform: scale(0.5); }
-    .mode-standby .rank-row { background: rgba(255,255,255,0.02); }
+        .btn-fs { padding: 8px 12px; background: #1f2937; color: white; border: none; border-radius: 6px; cursor: pointer; }
+        .btn-fs:hover { background: #374151; }
 
-    /* 2. REVEAL: Show scores, Show Rank */
-    .mode-reveal .cell-rank { color: #fff; transition-delay: 0.5s; }
-    .mode-reveal .rank-row { background: rgba(59, 130, 246, 0.1); border-color: rgba(59, 130, 246, 0.3); }
-    .mode-reveal .rank-1 .cell-rank { color: #F59E0B; text-shadow: 0 0 20px rgba(245, 158, 11, 0.5); }
+        select { padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; min-width: 250px; font-size: 16px; }
 
-    /* 3. VERDICT: High-Contrast Highlights */
-    .mode-verdict.row-qualified { 
-        border: 3px solid #22c55e !important; 
-        background: rgba(6, 95, 70, 0.6) !important; 
-        box-shadow: 0 0 30px rgba(34, 197, 94, 0.5);
-        z-index: 10;
-        transform: scale(1.02);
-    }
-    
-    .mode-verdict.row-qualified .cell-name { color: #ffffff; text-shadow: 0 0 10px rgba(34, 197, 94, 0.8); }
-    .mode-verdict.row-qualified .cell-rank { color: #4ade80; }
+        /* Scrollable Results Area */
+        #resultsArea { flex-grow: 1; overflow-y: auto; padding-bottom: 0; }
+        #resultsArea::-webkit-scrollbar { width: 8px; }
+        #resultsArea::-webkit-scrollbar-thumb { background: #ccc; border-radius: 4px; }
 
-    .mode-verdict.row-eliminated { 
-        opacity: 0.2; 
-        filter: grayscale(100%); 
-        border: 1px solid #334155; 
-        background: rgba(15, 23, 42, 0.5);
-        transform: scale(0.98);
-    }
+        /* Table Styling */
+        .ranking-table { width: 100%; border-collapse: separate; border-spacing: 0 5px; margin-top: 0; }
+        .ranking-table th { background: #1f2937; color: white; padding: 15px; text-align: left; font-size: 1.1em; position: sticky; top: 0; z-index: 10; }
+        .ranking-table td { padding: 15px; background: #fff; border-bottom: 1px solid #eee; vertical-align: middle; font-size: 1.2em; transition: 0.3s; }
+        
+        /* --- WINNER / QUALIFIED STYLES --- */
+        .row-qualified td { background-color: #ecfdf5; border-bottom: 2px solid #10b981; }
+        .row-winner td { background-color: #fffbeb; border-bottom: 2px solid #f59e0b; font-weight: bold; }
+        
+        /* --- ELIMINATED STYLE --- */
+        .row-eliminated td { opacity: 0.5; background-color: #f9fafb; filter: grayscale(1); }
 
-    /* --- CONTROL BAR (HOVER LOGIC) --- */
-    #control-bar { 
-        height: 60px; background: #020617; border-top: 1px solid #1e293b; 
-        display: flex; justify-content: center; align-items: center; gap: 15px; z-index: 1000;
-        transition: transform 0.4s ease-out, opacity 0.4s ease-out;
-    }
-    
-    /* The "Invisible Trigger" at bottom of screen */
-    #fs-trigger { 
-        position: fixed; bottom: 0; left: 0; width: 100%; height: 20px; 
-        z-index: 999; display: none; 
-    }
-    
-    /* Fullscreen Active States */
-    body.fs-active #fs-trigger { display: block; }
-    
-    body.fs-active #control-bar { 
-        position: fixed; bottom: 0; width: 100%; 
-        transform: translateY(100%); opacity: 0; 
-    }
-    
-    /* Reveal Bar on Hover */
-    body.fs-active #fs-trigger:hover ~ #control-bar, 
-    body.fs-active #control-bar:hover { 
-        transform: translateY(0); opacity: 1; 
-    }
+        /* --- RANK COLUMN STYLING (THE GOLD NUMBERS) --- */
+        .rank-col { 
+            width: 80px; 
+            text-align: center; 
+            font-size: 1.4em; 
+            color: #94a3b8; /* Default Grey */
+            font-weight: bold;
+        }
 
-    body.fs-active #header { margin-top: -15vh; } /* Hide Header in FS */
+        /* If Qualified or Winner, make Rank GOLD and BIGGER */
+        .row-qualified .rank-col, 
+        .row-winner .rank-col {
+            color: #d97706; /* Dark Gold/Orange */
+            font-size: 2em; /* Bigger */
+            font-weight: 900; /* Extra Bold */
+            text-shadow: 1px 1px 0 rgba(255,255,255,0.8);
+        }
 
-    .ctrl-group { display: flex; background: #1e293b; padding: 4px; border-radius: 6px; border: 1px solid #334155; }
-    .ctrl-btn { background: transparent; color: #94a3b8; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 6px; font-size: 13px; transition: 0.2s; }
-    .ctrl-btn:hover { color: white; background: rgba(255,255,255,0.05); }
-    .ctrl-btn.active { background: #3b82f6; color: white; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
-    
-    select { background: #0f172a; color: white; border: 1px solid #334155; padding: 8px; border-radius: 4px; outline: none; }
+        /* Winner gets slightly bigger Gold */
+        .row-winner .rank-col {
+            color: #b45309; /* Deep Gold */
+            font-size: 2.2em;
+        }
 
-</style>
+        .c-img { width: 60px; height: 60px; border-radius: 50%; object-fit: cover; border: 3px solid #e2e8f0; margin-right: 15px; }
+        
+        .score-display { font-family: 'Segoe UI', sans-serif; font-weight: 800; font-size: 1.4em; color: #1f2937; }
+        
+        .status-bar { text-align: center; padding: 8px; font-weight: bold; font-size: 0.9em; border-radius: 4px; margin-bottom: 5px; flex-shrink: 0; }
+        .status-unofficial { background: #e2e8f0; color: #64748b; }
+        .status-live { background: #dbeafe; color: #1e40af; }
+    </style>
 </head>
 <body>
 
-<div id="header">
-    <h1><?= htmlspecialchars($event_name) ?></h1>
-    <h2 id="round-display">SELECT ROUND</h2>
-    <div id="status-pill" class="status-pill pill-standby"><i class="fas fa-pause"></i> STANDBY</div>
-</div>
+    <div class="live-container">
+        
+        <div class="header-section">
+            <h1><?= htmlspecialchars($event_title) ?></h1>
+            <p>Official Tally Board</p>
+        </div>
 
-<div id="stage">
-    <div class="table-header">
-        <div class="th-rank">#</div>
-        <div class="th-img"></div> <div class="th-name">CANDIDATE</div>
-        <div class="th-score">SCORE</div>
-    </div>
+        <div class="controls-panel">
+            <select id="roundSelect" onchange="resetView()">
+                <option value="" disabled selected>-- Select Round --</option>
+                <?php foreach($rounds as $r): ?>
+                    <option value="<?= $r['id'] ?>"><?= htmlspecialchars($r['title']) ?></option>
+                <?php endforeach; ?>
+            </select>
 
-    <div class="ranking-container" id="list-container">
-        <div style="color:#475569; text-align:center; padding-top:100px; font-size:1.2rem;">
-            <i class="fas fa-satellite-dish fa-spin"></i> Connecting to Mainframe...
+            <div class="mode-group">
+                <button class="btn-mode active" id="btnList" onclick="setMode('list')">
+                    <i class="fas fa-list"></i> Candidates
+                </button>
+                
+                <button class="btn-mode" id="btnRank" onclick="setMode('rank')">
+                    <i class="fas fa-flag-checkered"></i> Show Final Result
+                </button>
+
+                <button onclick="toggleFullScreen()" class="btn-fs" title="Fullscreen">
+                    <i class="fas fa-expand"></i>
+                </button>
+            </div>
+        </div>
+
+        <div id="statusIndicator" class="status-bar status-unofficial">
+            SELECT A ROUND
+        </div>
+
+        <div id="resultsArea">
+            <table class="ranking-table">
+                <thead>
+                    <tr>
+                        <th width="10%" style="text-align:center;">#</th>
+                        <th width="70%">Candidate Info</th>
+                        <th width="20%" style="text-align:right;">Score</th>
+                    </tr>
+                </thead>
+                <tbody id="scoreBody">
+                    <tr><td colspan="3" style="text-align:center; padding:50px; color:#9ca3af;">Waiting for selection...</td></tr>
+                </tbody>
+            </table>
         </div>
     </div>
-</div>
 
-<div id="fs-trigger"></div>
+    <script>
+        let currentRoundId = null;
+        let currentMode = 'list';
+        let pollTimer = null;
 
-<div id="control-bar">
-    <select id="round-selector" onchange="manualChangeRound()">
-        <option value="">-- Select Round --</option>
-        <?php foreach($rounds as $r): ?>
-            <option value="<?= $r['id'] ?>"><?= htmlspecialchars($r['title']) ?></option>
-        <?php endforeach; ?>
-    </select>
-
-    <div class="ctrl-group">
-        <button class="ctrl-btn active" id="btn-standby" onclick="setMode('standby')">STANDBY</button>
-        <button class="ctrl-btn" id="btn-reveal" onclick="setMode('reveal')">LIVE</button>
-        <button class="ctrl-btn" id="btn-verdict" onclick="setMode('verdict')">VERDICT</button>
-    </div>
-
-    <button class="ctrl-btn" onclick="toggleFullScreen()" style="margin-left: 20px;">
-        <i class="fas fa-expand"></i> FULLSCREEN
-    </button>
-</div>
-
-<script>
-    // Configuration
-    const ROW_HEIGHT = 90; // 80px card + 10px margin
-    const POLL_INTERVAL = 3000; // 3 seconds
-
-    // State
-    let currentRoundId = null;
-    let pollTimer = null;
-    let currentMode = 'standby'; 
-    let contestantsData = [];
-    let cutOffCount = 5;
-    let roundStatus = 'Pending';
-
-    // --- 1. CORE LOGIC ---
-
-    function manualChangeRound() {
-        currentRoundId = document.getElementById('round-selector').value;
-        if(!currentRoundId) return;
-        
-        // Reset View
-        setMode('standby');
-        contestantsData = []; 
-        document.getElementById('list-container').innerHTML = '<div style="text-align:center; padding:50px; color:#666;">Loading...</div>';
-        
-        // Update Title
-        const sel = document.getElementById('round-selector');
-        document.getElementById('round-display').innerText = sel.options[sel.selectedIndex].text;
-
-        // Start Polling
-        if(pollTimer) clearInterval(pollTimer);
-        fetchData();
-        pollTimer = setInterval(fetchData, POLL_INTERVAL);
-    }
-
-    async function fetchData() {
-        if(!currentRoundId) return;
-        
-        try {
-            const res = await fetch(`../api/tally.php?round_id=${currentRoundId}`);
-            const data = await res.json();
-
-            if(data.status === 'success') {
-                contestantsData = data.ranking;
-                cutOffCount = parseInt(data.qualifiers) || 5;
-                roundStatus = data.round_status;
-
-                updateStatusUI(); // Update the pill badge
-                renderRows(); // Physical DOM update
-            }
-        } catch(e) {
-            console.error("Sync Error:", e);
-        }
-    }
-
-    // --- 2. RENDER ENGINE ---
-
-    function renderRows() {
-        const container = document.getElementById('list-container');
-        
-        // A. Create DOM elements if they don't exist
-        if(container.children.length !== contestantsData.length) {
-            container.innerHTML = ''; // Full rebuild if size changes
-            container.style.height = (contestantsData.length * ROW_HEIGHT) + 'px';
-            
-            contestantsData.forEach(item => {
-                const c = item.contestant;
-                const div = document.createElement('div');
-                div.id = `row-${c.detail_id || c.id}`;
-                div.className = `rank-row mode-${currentMode}`;
-                div.innerHTML = `
-                    <div class="cell-rank"></div>
-                    <div class="cell-img"><img src="./assets/uploads/contestants/${c.photo}" class="t-avatar" onerror="this.src='./assets/images/default_user.png'"></div>
-                    <div class="cell-name">${c.name}</div>
-                    <div class="cell-score"><span>0.00</span></div>
-                `;
-                container.appendChild(div);
-            });
-        }
-
-        // B. Sort Data based on Mode
-        let sortedList = [...contestantsData];
-        if (currentMode === 'standby') {
-            // Sort by Number (Neutral)
-            sortedList.sort((a, b) => a.contestant.contestant_number - b.contestant.contestant_number);
-        } else {
-            // Sort by Rank (Winner on top)
-            sortedList.sort((a, b) => parseFloat(a.rank) - parseFloat(b.rank));
-        }
-
-        // C. Animate Positions & Update Content
-        sortedList.forEach((item, index) => {
-            const c = item.contestant;
-            const el = document.getElementById(`row-${c.detail_id || c.id}`);
-            
-            if(el) {
-                // Move Row
-                el.style.top = (index * ROW_HEIGHT) + 'px';
-                
-                // Update Text
-                el.querySelector('.cell-score span').innerText = parseFloat(item.final_score).toFixed(2);
-                
-                // Rank Display
-                const rankEl = el.querySelector('.cell-rank');
-                if (currentMode === 'standby') rankEl.innerText = c.contestant_number; // Show # in standby
-                else rankEl.innerText = item.rank; // Show Rank in results
-
-                // Update Classes (State)
-                el.className = `rank-row mode-${currentMode}`;
-                
-                // Special Class for Rank 1
-                if (item.rank == 1) el.classList.add('rank-1');
-                else el.classList.remove('rank-1');
-
-                // Verdict Highlighting
-                if (currentMode === 'verdict') {
-                    if (index < cutOffCount) el.classList.add('row-qualified');
-                    else el.classList.add('row-eliminated');
-                } else {
-                    el.classList.remove('row-qualified', 'row-eliminated');
-                }
-            }
-        });
-    }
-
-    // --- 3. UI CONTROLS ---
-
-    function setMode(mode) {
-        if(currentMode === mode) return; // No change
-        currentMode = mode;
-        
-        // Update Buttons
-        document.querySelectorAll('.ctrl-btn').forEach(b => b.classList.remove('active'));
-        document.getElementById(`btn-${mode}`).classList.add('active');
-        
-        renderRows(); // Trigger animation
-    }
-
-    function updateStatusUI() {
-        const pill = document.getElementById('status-pill');
-        if(roundStatus === 'Active') {
-            pill.className = 'status-pill pill-active';
-            pill.innerHTML = '<i class="fas fa-circle"></i> LIVE SCORING';
-        } else if(roundStatus === 'Completed') {
-            pill.className = 'status-pill pill-locked';
-            pill.innerHTML = '<i class="fas fa-lock"></i> OFFICIAL RESULTS';
-        } else {
-            pill.className = 'status-pill pill-standby';
-            pill.innerHTML = '<i class="fas fa-pause"></i> PENDING';
-        }
-    }
-
-    function toggleFullScreen() {
-        if (!document.fullscreenElement) {
-            document.documentElement.requestFullscreen();
-            document.body.classList.add('fs-active');
-        } else {
-            if (document.exitFullscreen) {
-                document.exitFullscreen();
-                document.body.classList.remove('fs-active');
+        function toggleFullScreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(e => alert(e.message));
+            } else {
+                if (document.exitFullscreen) document.exitFullscreen();
             }
         }
-    }
 
-    // Auto-Select first round on load
-    window.addEventListener('DOMContentLoaded', () => {
-        const sel = document.getElementById('round-selector');
-        if(sel.options.length > 1) {
-            sel.selectedIndex = 1;
-            manualChangeRound();
+        function resetView() {
+            const select = document.getElementById('roundSelect');
+            currentRoundId = select.value;
+            setMode('list'); // Default to list
         }
-    });
 
-</script>
+        function setMode(mode) {
+            if(!currentRoundId) {
+                alert("Please select a round first.");
+                return;
+            }
+            currentMode = mode;
+
+            document.getElementById('btnList').className = mode === 'list' ? 'btn-mode active' : 'btn-mode';
+            document.getElementById('btnRank').className = mode === 'rank' ? 'btn-mode active' : 'btn-mode';
+
+            const statusEl = document.getElementById('statusIndicator');
+            if(mode === 'list') {
+                statusEl.innerText = "OFFICIAL CANDIDATES (ALPHABETICAL ORDER)";
+                statusEl.className = "status-bar status-unofficial";
+            } else {
+                statusEl.innerText = "FINAL RESULTS";
+                statusEl.className = "status-bar status-live";
+            }
+
+            fetchData();
+            if(pollTimer) clearInterval(pollTimer);
+            pollTimer = setInterval(fetchData, 3000);
+        }
+
+        function fetchData() {
+            if(!currentRoundId) return;
+            fetch(`live_screen.php?round_id=${currentRoundId}&fetch_rows=1&mode=${currentMode}`)
+                .then(response => response.text())
+                .then(html => {
+                    document.getElementById('scoreBody').innerHTML = html;
+                })
+                .catch(err => console.error('Error:', err));
+        }
+    </script>
 </body>
 </html>
