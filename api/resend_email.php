@@ -1,6 +1,6 @@
 <?php
 // Purpose: Backend controller for resending login credentials.
-// Supports two modes: 'reminder' (link only) and 'reset' (generate new password).
+// UPDATED: Now uses queueEmail() for instant UI response.
 
 require_once __DIR__ . '/../app/core/guard.php';
 requireLogin();
@@ -51,11 +51,12 @@ if (isset($_POST['user_id'])) {
             <p><a href='$site_link' style='background:#0284c7; color:white; padding:10px 20px; text-decoration:none; border-radius:5px;'>Login to Dashboard</a></p>
         ";
 
-        if (sendCustomEmail($user['email'], $subject, $body)) {
-            $msg = "Reminder email sent successfully!";
+        // FIX: Changed from sendCustomEmail to queueEmail
+        if (queueEmail($user['email'], $subject, $body)) {
+            $msg = "Reminder email queued successfully!";
             $status = "success";
         } else {
-            $msg = "Failed to send reminder email.";
+            $msg = "Failed to queue reminder email.";
         }
     }
 
@@ -91,11 +92,12 @@ if (isset($_POST['user_id'])) {
                 <p><a href='$site_link' style='background:#F59E0B; color:white; padding:10px 20px; text-decoration:none; border-radius:5px;'>Login Now</a></p>
             ";
 
-            if (sendCustomEmail($user['email'], $subject, $body)) {
-                $msg = "Password reset and email sent successfully!";
+            // FIX: Changed from sendCustomEmail to queueEmail
+            if (queueEmail($user['email'], $subject, $body)) {
+                $msg = "Password reset. Email queued successfully!";
                 $status = "success";
             } else {
-                $msg = "Password reset, but Email Failed to send.";
+                $msg = "Password reset, but Email Failed to queue.";
             }
 
         } else {
@@ -112,6 +114,9 @@ if (isset($_POST['user_id'])) {
     
     // If coming from organizers page, ensure we stay on the active tab
     if (strpos($_SERVER['HTTP_REFERER'], 'organizers.php') !== false) {
+        $redirect_url .= "?view=active"; 
+    } elseif (strpos($_SERVER['HTTP_REFERER'], 'contestants.php') !== false) {
+        // Keep them on the active list
         $redirect_url .= "?view=active"; 
     }
     

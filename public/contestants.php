@@ -24,7 +24,6 @@ if ($view === 'pending') {
 }
 
 // 2. Fetch Contestants based on Role
-// logic: Managers see their events; Staff see events they are assigned to.
 if ($my_role === 'Event Manager') {
     $contestants = Contestant::getAllByManager($my_id, $status_filter, $search);
     
@@ -209,12 +208,21 @@ $my_events = $evt_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
                     <div class="form-group"><label>Name</label><input type="text" name="name" class="form-control" required></div>
                     <div class="form-group"><label>Age</label><input type="number" name="age" class="form-control" required></div>
                 </div>
+                
                 <div class="form-row">
                     <div class="form-group"><label>Email</label><input type="email" name="email" class="form-control" required></div>
-                    <div class="form-group"><label>Password</label><input type="password" name="password" class="form-control" required></div>
+                    
+                    <div class="form-group" style="position:relative;">
+                        <label>Password</label>
+                        <input type="password" name="password" id="addPass" class="form-control" required>
+                        <i class="fas fa-eye" id="toggleAddPass" 
+                           onclick="togglePassword('addPass', 'toggleAddPass')" 
+                           style="position:absolute; right:10px; top:32px; cursor:pointer; color:#6b7280;"></i>
+                    </div>
                 </div>
+
                 <div class="form-row">
-                    <div class="form-group"><label>Height</label><input type="text" name="height" class="form-control"></div>
+                    <div class="form-group"><label>Height</label><input type="text" name="height" class="form-control" placeholder="170 cm"></div>
                     <div class="form-group"><label>Bust</label><input type="number" step="0.1" name="bust" class="form-control" placeholder="34"></div>
                 </div>
                 <div class="form-row">
@@ -256,8 +264,16 @@ $my_events = $evt_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
                 </div>
                 <div class="form-row">
                     <div class="form-group"><label>Email</label><input type="email" name="email" id="edit_email" class="form-control" required></div>
-                    <div class="form-group"><label>Change Password</label><input type="password" name="password" id="editPass" class="form-control" placeholder="Optional"></div>
+                    
+                    <div class="form-group" style="position:relative;">
+                        <label>Change Password</label>
+                        <input type="password" name="password" id="editPass" class="form-control" placeholder="Optional">
+                        <i class="fas fa-eye" id="toggleEditPass" 
+                           onclick="togglePassword('editPass', 'toggleEditPass')" 
+                           style="position:absolute; right:10px; top:32px; cursor:pointer; color:#6b7280;"></i>
+                    </div>
                 </div>
+
                 <div class="form-row">
                     <div class="form-group"><label>Height</label><input type="text" name="height" id="edit_height" class="form-control"></div>
                     <div class="form-group"><label>Bust</label><input type="number" step="0.1" name="bust" id="edit_bust" class="form-control"></div>
@@ -297,6 +313,22 @@ $my_events = $evt_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
         function openModal(id) { document.getElementById(id).style.display = 'flex'; }
         function closeModal(id) { document.getElementById(id).style.display = 'none'; }
         
+        // --- NEW: PASSWORD TOGGLE FUNCTION ---
+        function togglePassword(inputId, iconId) {
+            const input = document.getElementById(inputId);
+            const icon = document.getElementById(iconId);
+            
+            if (input.type === "password") {
+                input.type = "text";
+                icon.classList.remove('fa-eye');
+                icon.classList.add('fa-eye-slash');
+            } else {
+                input.type = "password";
+                icon.classList.remove('fa-eye-slash');
+                icon.classList.add('fa-eye');
+            }
+        }
+
         function populateModal(c) {
             document.getElementById('edit_id').value = c.id;
             document.getElementById('edit_event_id').value = c.event_id;
@@ -305,16 +337,10 @@ $my_events = $evt_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
             document.getElementById('edit_age').value = c.age;
             document.getElementById('edit_height').value = c.height;
             document.getElementById('edit_hometown').value = c.hometown;
-            document.getElementById('edit_motto').value = c.motto;
-            
-            if (c.vital_stats) {
-                const parts = c.vital_stats.split('-');
-                if(parts.length === 3) {
-                    document.getElementById('edit_bust').value = parts[0];
-                    document.getElementById('edit_waist').value = parts[1];
-                    document.getElementById('edit_hips').value = parts[2];
-                }
-            }
+            document.getElementById('edit_motto').value = c.motto;  
+            document.getElementById('edit_bust').value = c.bust || '';
+            document.getElementById('edit_waist').value = c.waist || '';
+            document.getElementById('edit_hips').value = c.hips || '';
             openModal('editModal');
         }
 

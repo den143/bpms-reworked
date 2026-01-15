@@ -7,16 +7,6 @@ requireLogin();
 requireRole(['Event Manager', 'Contestant Manager']); 
 require_once __DIR__ . '/../app/config/database.php';
 
-// HELPER: Parse "34-24-36" string into separate values
-function parseVitalStats($str) {
-    $parts = preg_split('/[^0-9.]/', $str); 
-    return [
-        'bust'  => isset($parts[0]) ? (float)$parts[0] : 0,
-        'waist' => isset($parts[1]) ? (float)$parts[1] : 0,
-        'hips'  => isset($parts[2]) ? (float)$parts[2] : 0
-    ];
-}
-
 // PART 1: HANDLE POST REQUESTS (CREATE / UPDATE)
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
@@ -38,7 +28,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'create') {
         $pass = trim($_POST['password']);
         
-        // Check photo
         if (!isset($_FILES['photo']) || $_FILES['photo']['error'] !== 0) {
             header("Location: ../public/contestants.php?error=Photo is required");
             exit();
@@ -53,11 +42,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $conn->begin_transaction();
         try {
             $hashed_pass = password_hash($pass, PASSWORD_DEFAULT);
-            
-            // [UPDATED] Get the ID of the manager creating this account
             $creator_id = $_SESSION['user_id'];
 
-            // 1. Create User Login (Added created_by column)
+            // 1. Create User Login
             $stmt1 = $conn->prepare("INSERT INTO users (name, email, password, role, status, created_by) VALUES (?, ?, ?, 'Contestant', 'Active', ?)");
             $stmt1->bind_param("sssi", $name, $email, $hashed_pass, $creator_id);
             $stmt1->execute();
@@ -72,9 +59,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt2->bind_param("iiidddddsss", $user_id, $event_id, $next_num, $age, $height, $bust, $waist, $hips, $hometown, $motto, $photo_name);
             $stmt2->execute();
             
-            // Send Email
+            // Send Email (Queued)
             require_once __DIR__ . '/../app/core/CustomMailer.php';
-            // Make sure this link is correct for your pc
             $site_link = "https://juvenal-esteban-octavalent.ngrok-free.dev/bpms_v2/public/index.php"; 
             
             $e_query = $conn->query("SELECT title FROM events WHERE id = $event_id");
@@ -194,21 +180,37 @@ if (isset($_GET['action']) && isset($_GET['id'])) {
 
     // Action Logic
     if ($action === 'delete') {
+        // [FIXED] SOFT DELETE BOTH RECORDS
+        $conn->begin_transaction();
+        
+        // 1. Hide from Event List
         $stmt = $conn->prepare("UPDATE event_contestants SET is_deleted = 1 WHERE id = ?");
         $stmt->bind_param("i", $target_id);
         $stmt->execute();
+        
+        // 2. Disable User Account (Logic: Status=Inactive AND is_deleted=1)
+        // This ensures the row is marked deleted in the USERS table too.
+        $stmt2 = $conn->prepare("UPDATE users SET status = 'Inactive', is_deleted = 1 WHERE id = ?"); 
+        $stmt2->bind_param("i", $target_user_id);
+        $stmt2->execute();
+        
+        $conn->commit();
+        
         $msg = "Contestant permanently removed from list.";
         $tab = 'archived';
 
     } elseif ($action === 'restore') {
         $conn->begin_transaction();
-        $conn->query("UPDATE users SET status = 'Active' WHERE id = $target_user_id");
+        // Restore User Login
+        $conn->query("UPDATE users SET status = 'Active', is_deleted = 0 WHERE id = $target_user_id");
+        // Restore Contestant Profile
         $conn->query("UPDATE event_contestants SET is_deleted = 0, status = 'Active' WHERE id = $target_id");
         $conn->commit();
         $msg = "Contestant restored successfully.";
         $tab = 'archived';
 
     } elseif ($action === 'remove') {
+        // Archive (Soft Remove) Logic
         $stmt = $conn->prepare("UPDATE users SET status = 'Inactive' WHERE id = ?");
         $stmt->bind_param("i", $target_user_id);
         $stmt->execute();
@@ -227,11 +229,22 @@ if (isset($_GET['action']) && isset($_GET['id'])) {
         $msg = "Application Approved";
         $tab = 'pending';
 
-        // Notification
+        // --- FIX: USE QUEUE FOR INSTANT LOAD ---
         require_once __DIR__ . '/../app/core/CustomMailer.php';
         $site_link = "https://juvenal-esteban-octavalent.ngrok-free.dev/bpms_v2/public/index.php";
+        
         $u_data = $conn->query("SELECT name, email FROM users WHERE id = $target_user_id")->fetch_assoc();
-        if ($u_data) sendCustomEmail($u_data['email'], "Application ACCEPTED", "<h2>Congrats {$u_data['name']}!</h2><p>Your application is accepted.</p><p><a href='$site_link'>Login</a></p>");
+        
+        if ($u_data) {
+            $subject = "Application ACCEPTED";
+            // FIXED: Body text
+            $body = "<h2>Congrats {$u_data['name']}!</h2>
+                     <p>Your application is accepted.</p>
+                     <p>You may now login using the <b>Email</b> and <b>Password</b> you created during registration.</p>
+                     <p><a href='$site_link' style='background:#F59E0B;color:white;padding:10px 20px;text-decoration:none;'>Login Now</a></p>";
+    
+            queueEmail($u_data['email'], $subject, $body);
+        }
 
     } elseif ($action === 'reject') {
         $conn->begin_transaction();
