@@ -13,7 +13,6 @@ class Contestant
         $params = [$managerId];
         $types = "i";
 
-        // LOGIC FIX: If looking for "Active" (Official), include Qualified and Eliminated too.
         if ($status === 'Active') {
             $statusClause = "AND ec.status IN ('Active', 'Qualified', 'Eliminated')";
         } else {
@@ -22,10 +21,13 @@ class Contestant
             $types .= "s";
         }
 
+        // [FIXED] Added ec.contestant_number to SELECT
         $sql = "SELECT u.id, u.name, u.email, u.status as user_status, 
                        ec.status AS competition_status, 
                        ec.id as contestant_id,
+                       ec.contestant_number, 
                        ec.age, ec.height, 
+                       ec.bust, ec.waist, ec.hips,
                        CONCAT(ec.bust, '-', ec.waist, '-', ec.hips) as vital_stats, 
                        ec.hometown, ec.motto, ec.photo, ec.event_id,
                        e.title as event_name 
@@ -45,7 +47,6 @@ class Contestant
         $params = [$organizerId];
         $types = "i";
 
-        // LOGIC FIX: Same here. 'Active' tab should show Qualified/Eliminated too.
         if ($status === 'Active') {
             $statusClause = "AND ec.status IN ('Active', 'Qualified', 'Eliminated')";
         } else {
@@ -54,10 +55,13 @@ class Contestant
             $types .= "s";
         }
 
+        // [FIXED] Added ec.contestant_number to SELECT
         $sql = "SELECT u.id, u.name, u.email, u.status as user_status, 
                        ec.status AS competition_status,
                        ec.id as contestant_id,
+                       ec.contestant_number,
                        ec.age, ec.height, 
+                       ec.bust, ec.waist, ec.hips,
                        CONCAT(ec.bust, '-', ec.waist, '-', ec.hips) as vital_stats,
                        ec.hometown, ec.motto, ec.photo, ec.event_id,
                        e.title as event_name 
@@ -86,7 +90,7 @@ class Contestant
             $baseParams[] = $searchTerm;
         }
         
-        $sql .= " ORDER BY ec.registered_at DESC";
+        $sql .= " ORDER BY ec.contestant_number ASC, ec.registered_at DESC"; // Sort by Number first
 
         $stmt = $db->prepare($sql);
         if (!$stmt) {
@@ -98,3 +102,4 @@ class Contestant
         return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     }
 }
+?>

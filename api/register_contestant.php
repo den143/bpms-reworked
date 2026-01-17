@@ -11,7 +11,6 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-// FLAG: Track if we started a transaction
 $transaction_started = false;
 
 try {
@@ -33,11 +32,10 @@ try {
         throw new Exception("All fields are required");
     }
 
-    // 3. Start Transaction
     $conn->begin_transaction();
     $transaction_started = true;
 
-    // 4. Handle File Upload (Do this early so we have the filename)
+    // 4. Handle File Upload
     $photo_filename = 'default_contestant.png';
     if (isset($_FILES['photo']) && $_FILES['photo']['error'] === UPLOAD_ERR_OK) {
         $fileTmpPath = $_FILES['photo']['tmp_name'];
@@ -64,20 +62,19 @@ try {
     // 5. CHECK USER EXISTENCE LOGIC
     $user_id = 0;
     
-    // Check if email exists in 'users'
+    // Check if email exists
     $stmt = $conn->prepare("SELECT id, password, role FROM users WHERE email = ?");
     $stmt->bind_param("s", $email);
     $stmt->execute();
     $result = $stmt->get_result();
     
     if ($row = $result->fetch_assoc()) {
-        // SCENARIO A: User Exists (Returning Contestant)
-
+        // SCENARIO A: Returning Contestant
         if ($row['role'] !== 'Contestant') {
-            throw new Exception("This email is already registered as a " . $row['role'] . ". Please use a different email to register as a Contestant.");
+            throw new Exception("This email is already registered as a " . $row['role'] . ". Please use a different email.");
         }
         
-        // Security Check: Verify password matches the existing account
+        // Verify Password for linking
         if (password_verify($password, $row['password'])) {
             $user_id = $row['id'];
 
@@ -91,11 +88,11 @@ try {
             $dupCheck->close();
 
         } else {
-            throw new Exception("This email is already registered. Please enter the correct password to join the new event.");
+            throw new Exception("This email is registered. Incorrect password.");
         }
     } else {
-        // SCENARIO B: New User (First time registering)
-        $stmt->close(); // Close previous statement
+        // SCENARIO B: New User
+        $stmt->close(); 
 
         $hashed_password = password_hash($password, PASSWORD_DEFAULT);
         $role = 'Contestant';
@@ -108,13 +105,7 @@ try {
         $insertUser->close();
     }
     
-    // Note: If stmt wasn't closed in Scenario A, close it now
-    if (isset($stmt) && $stmt instanceof mysqli_stmt) {
-        // Attempting to close strictly if open, but PHP handles this usually.
-        // Re-using variable names requires care.
-    }
-
-    // 6. Calculate next Contestant Number for THIS Event
+    // 6. Calculate next Contestant Number
     $stmt = $conn->prepare("SELECT MAX(contestant_number) as max_num FROM event_contestants WHERE event_id = ?");
     $stmt->bind_param("i", $event_id);
     $stmt->execute();
@@ -122,7 +113,7 @@ try {
     $next_number = ($res['max_num'] ?? 0) + 1;
     $stmt->close();
 
-    // 7. Insert into 'event_contestants' table
+    // 7. Insert into 'event_contestants'
     $contestant_status = 'Pending';
     
     $stmt = $conn->prepare("INSERT INTO event_contestants 
@@ -146,19 +137,12 @@ try {
     $stmt->execute();
     $stmt->close();
 
-    // 8. Commit Transaction
     $conn->commit();
-
     header("Location: ../public/register.php?success=Registration successful! You may now login.");
 
 } catch (Exception $e) {
-    // 9. Rollback if error
     if ($transaction_started) {
-        try {
-            $conn->rollback();
-        } catch (Exception $rollbackError) {
-            // Ignore
-        }
+        try { $conn->rollback(); } catch (Exception $ex) {}
     }
     header("Location: ../public/register.php?error=" . urlencode($e->getMessage()));
 }

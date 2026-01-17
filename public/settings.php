@@ -26,6 +26,7 @@ $total_used = 0;
 $all_events = [];
 
 if ($is_event_manager) {
+    // 1. Get Currently Selected Event
     $active_evt_query = $conn->prepare("SELECT * FROM events WHERE manager_id = ? AND status = 'Active' AND is_deleted = 0 LIMIT 1");
     $active_evt_query->bind_param("i", $u_id);
     $active_evt_query->execute();
@@ -43,7 +44,18 @@ if ($is_event_manager) {
         $tickets = $conn->query("SELECT * FROM tickets WHERE event_id = $event_id ORDER BY generated_at DESC LIMIT 500")->fetch_all(MYSQLI_ASSOC);
     }
 
-    $hist_stmt = $conn->prepare("SELECT * FROM events WHERE manager_id = ? AND is_deleted = 0 ORDER BY created_at DESC");
+    // 2. Get All Events (History) + INTELLIGENT STATUS CHECK
+    // Logic: An event is 'Complete' if the Final Round (highest ordering) is 'Finished' OR has been Tabulated (has rankings).
+    $hist_stmt = $conn->prepare("
+        SELECT e.*, 
+        (SELECT status FROM rounds r WHERE r.event_id = e.id AND r.is_deleted = 0 ORDER BY r.ordering DESC LIMIT 1) as final_round_status,
+        (SELECT COUNT(*) FROM round_rankings rr WHERE rr.round_id = (
+            SELECT id FROM rounds r2 WHERE r2.event_id = e.id AND r2.is_deleted = 0 ORDER BY r2.ordering DESC LIMIT 1
+        )) as is_tabulated
+        FROM events e 
+        WHERE e.manager_id = ? AND e.is_deleted = 0 
+        ORDER BY e.created_at DESC
+    ");
     $hist_stmt->bind_param("i", $u_id);
     $hist_stmt->execute();
     $all_events = $hist_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
@@ -212,8 +224,13 @@ $me = $me_stmt->get_result()->fetch_assoc();
         
         .data-table { width: 100%; border-collapse: collapse; }
         .data-table th, .data-table td { padding: 15px; text-align: left; border-bottom: 1px solid #f3f4f6; }
+        
+        /* Badges */
         .badge { padding: 4px 8px; border-radius: 12px; font-size: 11px; font-weight: bold; }
-        .badge-active { background: #d1fae5; color: #065f46; } .badge-inactive { background: #f3f4f6; color: #6b7280; }
+        .badge-active { background: #d1fae5; color: #065f46; } 
+        .badge-inactive { background: #f3f4f6; color: #6b7280; } 
+        .badge-completed { background: #dcfce7; color: #166534; } 
+        .badge-progress { background: #dbeafe; color: #1e40af; } 
         
         .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px; }
         .stat-box { background: #f9fafb; padding: 15px; border-radius: 6px; text-align: center; border: 1px solid #e5e7eb; }
@@ -396,12 +413,26 @@ $me = $me_stmt->get_result()->fetch_assoc();
                                 </div>
                                 <div style="overflow-x:auto;">
                                     <table class="data-table">
-                                        <thead><tr><th>Title</th><th>Status</th><th>Action</th></tr></thead>
+                                        <thead><tr><th>Title</th><th>Selection</th><th>Progress</th><th>Action</th></tr></thead>
                                         <tbody>
-                                            <?php foreach ($all_events as $evt): $is_curr = ($evt['status'] === 'Active'); ?>
+                                            <?php foreach ($all_events as $evt): 
+                                                $is_curr = ($evt['status'] === 'Active'); 
+                                                // CHECK COMPLETION: If status is Finished/Closed OR if Results Exist (is_tabulated > 0)
+                                                $is_completed = (
+                                                    in_array($evt['final_round_status'], ['Finished', 'Completed', 'Closed']) || 
+                                                    $evt['is_tabulated'] > 0
+                                                );
+                                            ?>
                                             <tr>
                                                 <td><?= htmlspecialchars($evt['title']) ?></td>
                                                 <td><span class="badge <?= $is_curr ? 'badge-active' : 'badge-inactive' ?>"><?= $evt['status'] ?></span></td>
+                                                <td>
+                                                    <?php if ($is_completed): ?>
+                                                        <span class="badge badge-completed"><i class="fas fa-check"></i> COMPLETED</span>
+                                                    <?php else: ?>
+                                                        <span class="badge badge-progress"><i class="fas fa-spinner"></i> IN PROGRESS</span>
+                                                    <?php endif; ?>
+                                                </td>
                                                 <td>
                                                     <?php if (!$is_curr): ?>
                                                         <button onclick="openSwitchModal(<?= $evt['id'] ?>)" style="color:#2563eb; border:none; background:none; font-weight:bold;">Switch</button>

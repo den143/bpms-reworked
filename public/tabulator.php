@@ -1,11 +1,14 @@
 <?php
+// public/tabulator.php
+// Purpose: The Event Manager's view of the tabulation results.
+// Note: The actual "Tabulator" role uses 'tabulator_dashboard.php' instead.
+
 require_once __DIR__ . '/../app/core/guard.php';
 requireLogin();
-requireRole(['Event Manager', 'Tabulator']);
+requireRole('Event Manager'); // <--- RESTRICTED TO MANAGER ONLY
 require_once __DIR__ . '/../app/config/database.php';
 
 $user_id = $_SESSION['user_id'];
-$user_role = $_SESSION['role'];
 
 // 1. GET ACTIVE EVENT
 $evt_sql = "SELECT id, title FROM events WHERE status = 'Active' LIMIT 1";
@@ -14,8 +17,8 @@ $event = $conn->query($evt_sql)->fetch_assoc();
 if (!$event) {
     die("<div style='text-align:center; padding:50px; font-family:sans-serif; color:#6b7280;'>
             <h1><i class='fas fa-calendar-times'></i> No Active Event</h1>
-            <p>The Event Manager must set an event to 'Active' status first.</p>
-            <a href='logout.php'>Logout</a>
+            <p>You must set an event to 'Active' status in the Settings or Dashboard first.</p>
+            <a href='dashboard.php'>Go to Dashboard</a>
          </div>");
 }
 $event_id = $event['id'];
@@ -82,7 +85,6 @@ $current_round_id = isset($_GET['round_id']) ? (int)$_GET['round_id'] : ($rounds
         /* --- HELPERS --- */
         .rank-box { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border-radius: 50%; margin: 0 auto; font-weight: 800; font-size: 14px; background: #f3f4f6; color: #666; transition: 0.3s; }
         
-        /* 1. QUALIFIED / WINNER RANK STYLE */
         .row-qualified .rank-box { 
             background: var(--gold); 
             color: white; 
@@ -91,7 +93,6 @@ $current_round_id = isset($_GET['round_id']) ? (int)$_GET['round_id'] : ($rounds
             font-weight: 900;
         }
 
-        /* 2. ELIMINATED RANK STYLE (Keep as is) */
         .row-eliminated .rank-box {
             background: #e5e7eb;
             color: #9ca3af;
@@ -125,7 +126,6 @@ $current_round_id = isset($_GET['round_id']) ? (int)$_GET['round_id'] : ($rounds
             #auditView:not(.hidden) { display: block !important; }
             .segment-block { page-break-inside: avoid; border-top: 2px solid #000; padding-top: 10px; }
             
-            /* Print Header */
             .tally-card::before {
                 content: "OFFICIAL RESULT SHEET: <?= strtoupper(htmlspecialchars($event['title'])) ?>";
                 display: block; text-align: center; font-weight: bold; font-size: 16pt; margin-bottom: 20px;
@@ -139,27 +139,7 @@ $current_round_id = isset($_GET['round_id']) ? (int)$_GET['round_id'] : ($rounds
 
 <div class="main-wrapper">
     
-    <?php if ($user_role === 'Event Manager'): ?>
-        <?php include_once __DIR__ . '/../app/views/partials/sidebar.php'; ?>
-    <?php else: ?>
-        <div class="sidebar sidebar-tabulator" style="background-color: #111827;">
-            <div class="sidebar-header">
-                <img src="assets/images/BPMS_logo.png" alt="BPMS Logo" class="sidebar-logo">
-                <div class="brand-text">
-                    <div class="brand-name">BPMS</div>
-                    <div class="brand-subtitle">Tabulation Panel</div>
-                </div>
-            </div>
-            <ul class="sidebar-menu">
-                <li><a href="tabulator.php" class="active"><i class="fas fa-calculator"></i> <span>Score Sheet</span></a></li>
-            </ul>
-            <div class="sidebar-footer">
-                <a href="logout.php" onclick="return confirm('Confirm Logout?');">
-                    <i class="fas fa-sign-out-alt"></i> <span>Logout</span>
-                </a>
-            </div>
-        </div>
-    <?php endif; ?>
+    <?php include_once __DIR__ . '/../app/views/partials/sidebar.php'; ?>
 
     <div class="content-area">
         <div class="navbar" style="background:var(--dark); color:white; padding:15px 25px;">

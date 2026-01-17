@@ -22,7 +22,7 @@ if (isset($_SESSION['user_id']) && isset($_SESSION['role'])) {
             header("Location: ./contestant_manager.php"); 
             break;
         case 'Tabulator':
-            header("Location: ./tabulator.php"); 
+            header("Location: ./tabulator_dashboard.php"); 
             break;
         case 'Contestant':
             header("Location: ./contestant_dashboard.php"); 
@@ -135,14 +135,13 @@ $error = $_GET['error'] ?? null;
         </div>
         <div class="brand-text-group">
             <div class="brand-tagline">"Celebrating Beauty, Intelligence, and Grace"</div>
-            <p class="brand-desc">The official management portal for the University Beauty Pageant. Securely manage contestants in real-time.</p>
+            <p class="brand-desc">The official management portal for the Old Rizal Beauty Pageant. Securely manage contestants in real-time.</p>
         </div>
-        <div class="brand-footer">&copy; <?= date("Y") ?> UEP Beauty Pageant Management System.</div>
+        <div class="brand-footer">&copy; <?= date("Y") ?> Beauty Pageant Management System.</div>
     </div>
 
     <div class="login-section">
         <div class="login-card">
-            
             <?php if ($error): ?>
                 <div class="alert-error">
                     <i class="fas fa-exclamation-circle"></i> <?= htmlspecialchars($error) ?>

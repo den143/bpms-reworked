@@ -1,5 +1,5 @@
 <?php
-// judge_dashboard.php - Fixed Z-Index Layering
+// public/judge_dashboard.php
 require_once __DIR__ . '/../app/core/guard.php';
 require_once __DIR__ . '/../app/config/database.php';
 
@@ -84,13 +84,13 @@ if ($active) {
     // 4. Get Contestants (Funnel Logic)
     if ($current_order == 1) {
         // ROUND 1: Show ALL Active Contestants
-        // ADDED: AND ec.status = 'Active'
+        // [FIX] Allow both Active and Qualified (just in case)
         $cont_q = "SELECT ec.id, u.name, ec.photo, ec.contestant_number
                    FROM event_contestants ec 
                    JOIN users u ON ec.user_id = u.id 
                    WHERE ec.event_id = ? 
                      AND ec.is_deleted = 0 
-                     AND ec.status = 'Active'
+                     AND ec.status IN ('Active', 'Qualified')
                    ORDER BY ec.contestant_number ASC"; 
         $stmt_c = $conn->prepare($cont_q);
         $stmt_c->bind_param("i", $event_id);
@@ -105,28 +105,28 @@ if ($active) {
             $prev_rid = $prev_round['id'];
             $limit = $prev_round['qualify_count'];
             
-            // Join with Rankings Table
-            // ADDED: AND ec.status = 'Active'
+            // [FIX] Updated status check to IN ('Active', 'Qualified')
             $cont_q = "SELECT ec.id, u.name, ec.photo, ec.contestant_number
-                       FROM event_contestants ec 
-                       JOIN users u ON ec.user_id = u.id
-                       JOIN round_rankings rr ON ec.id = rr.contestant_id
-                       WHERE ec.event_id = ? 
-                         AND rr.round_id = ? 
-                         AND rr.rank <= ? 
-                         AND ec.is_deleted = 0
-                         AND ec.status = 'Active'
-                       ORDER BY rr.rank ASC";
+                        FROM event_contestants ec 
+                        JOIN users u ON ec.user_id = u.id
+                        JOIN round_rankings rr ON ec.id = rr.contestant_id
+                        WHERE ec.event_id = ? 
+                          AND rr.round_id = ? 
+                          AND rr.rank <= ? 
+                          AND ec.is_deleted = 0
+                          AND ec.status IN ('Active', 'Qualified') 
+                        ORDER BY rr.rank ASC";
             $stmt_c = $conn->prepare($cont_q);
             $stmt_c->bind_param("iii", $event_id, $prev_rid, $limit);
         } else {
             // Fallback
+            // [FIX] Updated status check here too
             $cont_q = "SELECT ec.id, u.name, ec.photo, ec.contestant_number 
-                       FROM event_contestants ec 
-                       JOIN users u ON ec.user_id = u.id 
-                       WHERE ec.event_id = ? 
-                         AND ec.is_deleted = 0
-                         AND ec.status = 'Active'";
+                        FROM event_contestants ec 
+                        JOIN users u ON ec.user_id = u.id 
+                        WHERE ec.event_id = ? 
+                          AND ec.is_deleted = 0
+                          AND ec.status IN ('Active', 'Qualified')";
             $stmt_c = $conn->prepare($cont_q);
             $stmt_c->bind_param("i", $event_id);
         }
@@ -136,10 +136,10 @@ if ($active) {
 
     // Get Saved Scores
     $stmt_scores = $conn->prepare("SELECT s.contestant_id, s.criteria_id, s.score_value 
-                   FROM scores s
-                   JOIN criteria c ON s.criteria_id = c.id
-                   JOIN segments seg ON c.segment_id = seg.id
-                   WHERE s.judge_id = ? AND seg.round_id = ?");
+                    FROM scores s
+                    JOIN criteria c ON s.criteria_id = c.id
+                    JOIN segments seg ON c.segment_id = seg.id
+                    WHERE s.judge_id = ? AND seg.round_id = ?");
     $stmt_scores->bind_param("ii", $judge_id, $round_id);
     $stmt_scores->execute();
     $res_scores = $stmt_scores->get_result();
@@ -165,19 +165,16 @@ if ($active) {
     <link rel="stylesheet" href="./assets/fontawesome/css/all.min.css">
     <style>
         :root { --primary: #111827; --accent: #F59E0B; --success: #10b981; --bg: #f3f4f6; }
-        
-        /* FIX: Global Box Sizing */
         * { box-sizing: border-box; }
 
         body { 
             background: var(--bg); 
             font-family: 'Segoe UI', sans-serif; 
             margin: 0; 
-            padding-bottom: 120px; /* Extra space for footer */
+            padding-bottom: 120px; 
             -webkit-tap-highlight-color: transparent; 
         }
         
-        /* Header: Z-Index 50 */
         .header { 
             background: var(--primary); color: white; padding: 15px; 
             position: sticky; top: 0; z-index: 50; 
@@ -206,16 +203,15 @@ if ($active) {
         .card.done .status-text { color: var(--success); }
         .card.done .c-num { color: var(--success); }
 
-        /* --- Z-INDEX FIX: Modal must be higher than Footer --- */
         .modal { 
             position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
-            background: #f9fafb; z-index: 2000; /* Highest priority */
+            background: #f9fafb; z-index: 2000; 
             display: none; flex-direction: column; 
         }
         .modal-header { 
             background: white; padding: 15px; border-bottom: 1px solid #eee; 
             display: flex; align-items: center; gap: 15px; position: sticky; top: 0; 
-            z-index: 2001; /* Above modal content */
+            z-index: 2001; 
         }
         .close-btn { font-size: 1.5rem; color: #4b5563; padding: 5px; cursor: pointer; }
         .modal-content { flex-grow: 1; overflow-y: auto; padding: 20px; padding-bottom: 100px; -webkit-overflow-scrolling: touch; }
@@ -232,8 +228,6 @@ if ($active) {
         .score-box { width: 70px; padding: 10px; text-align: center; font-size: 1.2rem; font-weight: bold; border: 2px solid #d1d5db; border-radius: 8px; color: var(--primary); }
         .score-box:focus { border-color: var(--accent); outline: none; background: #fffbeb; }
 
-        /* --- FOOTERS --- */
-        /* Dashboard Footer: Z-Index 100 */
         .footer { 
             position: fixed; bottom: 0; left: 0; right: 0; 
             background: white; padding: 15px; border-top: 1px solid #eee; 
@@ -241,12 +235,11 @@ if ($active) {
             box-shadow: 0 -4px 10px rgba(0,0,0,0.05);
         }
 
-        /* Modal Save Bar: Z-Index 2001 (Inside Modal) */
         .save-bar { 
             position: fixed; bottom: 0; left: 0; right: 0; 
             background: white; padding: 15px; 
             box-shadow: 0 -4px 10px rgba(0,0,0,0.05); text-align: center;
-            z-index: 2001; /* Must be higher than .modal */
+            z-index: 2001; 
         }
         
         .btn-save, .btn-final { 
@@ -319,7 +312,7 @@ if ($active) {
                 <i class="fas fa-lock"></i> SUBMITTED
             </button>
         <?php else: ?>
-            <form id="submitForm" action="../api/submit_scores.php" method="POST" onsubmit="return confirm('Are you sure? This cannot be undone.');">
+            <form id="submitForm" action="../api/submit_scores.php" method="POST">
                 <input type="hidden" name="round_id" value="<?= $round_id ?>">
                 <button type="submit" id="btnSubmitAll" class="btn-final" disabled>Finish Scoring to Submit</button>
             </form>
@@ -351,18 +344,14 @@ if ($active) {
     <script>
         const segments = <?= json_encode($segments_data) ?>;
         const contestants = <?= json_encode($contestants) ?>;
-        // 1. We start with DB scores (in case they switched devices)
         let dbScores = <?= json_encode($draft_scores) ?> || {};
         const isLocked = <?= $is_locked ? 'true' : 'false' ?>;
         const roundId = <?= $round_id ?>;
-        const judgeId = <?= $judge_id ?>; // Needed for unique storage key
+        const judgeId = <?= $judge_id ?>; 
 
-        // 2. We try to load "Fresh" scores from Browser Memory
         const storageKey = `bpms_scores_${judgeId}_${roundId}`;
         let localScores = JSON.parse(localStorage.getItem(storageKey)) || {};
 
-        // 3. Merge: Local Storage wins (it's newer), fallback to DB
-        // Deep merge logic simplified for this structure
         let savedScores = { ...dbScores }; 
         for (const cid in localScores) {
             if (!savedScores[cid]) savedScores[cid] = {};
@@ -395,7 +384,6 @@ if ($active) {
             } else {
                 seg.criteria.forEach(crit => {
                     let val = '';
-                    // Check our merged scores object
                     if (savedScores[cid] && savedScores[cid][crit.id] !== undefined) {
                         val = savedScores[cid][crit.id];
                     }
@@ -429,7 +417,6 @@ if ($active) {
             document.getElementById('scoringModal').style.display = 'none';
         }
 
-        // --- UPDATED: SAVE TO LOCAL STORAGE ONLY ---
         function saveScores() {
             if(isLocked) return;
 
@@ -443,7 +430,6 @@ if ($active) {
                 let max = parseFloat(inp.getAttribute('max'));
 
                 if (valStr === '') {
-                    // Empty implies deletion
                 } else if (isNaN(val) || val < 0 || val > max) {
                     alert("Invalid score: " + val + " (Max: " + max + ")");
                     valid = false;
@@ -456,7 +442,6 @@ if ($active) {
 
             if(!savedScores[currentCId]) savedScores[currentCId] = {};
             
-            // Overwrite specific criteria in memory
             const seg = segments[currentSegId];
             seg.criteria.forEach(c => {
                 if (newScores[c.id] !== undefined) {
@@ -466,7 +451,6 @@ if ($active) {
                 }
             });
 
-            // 4. COMMIT TO LOCAL STORAGE (The Magic Part)
             localStorage.setItem(storageKey, JSON.stringify(savedScores));
 
             refreshCardStatus();
@@ -506,14 +490,17 @@ if ($active) {
             });
         }
 
-        // --- UPDATED: SUBMIT ALL (SENDS EVERYTHING) ---
         async function submitAll(e) {
             e.preventDefault();
             if(!confirm('Are you sure? This will SUBMIT ALL scores to the server.')) return;
 
             const btn = document.getElementById('btnSubmitAll');
+            
+            // --- FEATURE: LOCK BUTTON IMMEDIATELY ---
             btn.disabled = true;
-            btn.innerText = "Submitting...";
+            btn.innerHTML = '<i class="fas fa-lock"></i> Locking...';
+            btn.style.backgroundColor = '#4b5563'; // Grey background
+            btn.style.cursor = 'not-allowed';
 
             try {
                 const response = await fetch('../api/submit_scores.php', {
@@ -521,26 +508,31 @@ if ($active) {
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({
                         round_id: roundId,
-                        all_scores: savedScores // WE SEND THE WHOLE BLOCK HERE
+                        all_scores: savedScores
                     })
                 });
 
                 const result = await response.json();
 
                 if (result.success) {
-                    // 5. CLEAR LOCAL STORAGE ON SUCCESS
                     localStorage.removeItem(storageKey);
                     alert("Submission Successful!");
                     location.reload();
                 } else {
                     alert("Error: " + (result.error || "Unknown error"));
+                    // Unlock on error
                     btn.disabled = false;
                     btn.innerText = "SUBMIT ALL";
+                    btn.style.backgroundColor = ''; 
+                    btn.style.cursor = 'pointer';
                 }
             } catch(err) {
                 alert("Network Error. Check connection.");
+                // Unlock on error
                 btn.disabled = false;
                 btn.innerText = "SUBMIT ALL";
+                btn.style.backgroundColor = ''; 
+                btn.style.cursor = 'pointer';
             }
         }
 
@@ -589,7 +581,6 @@ if ($active) {
         
         updateSubmitButton();
         
-        // Attach the new submit handler
         const form = document.getElementById('submitForm');
         if(form) form.onsubmit = submitAll; 
 

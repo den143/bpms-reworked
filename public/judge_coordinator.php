@@ -6,7 +6,7 @@ require_once __DIR__ . '/../app/config/database.php';
 
 $coordinator_id = $_SESSION['user_id'];
 
-// --- 1. FETCH ASSIGNED EVENT (Must happen first to get Event ID) ---
+// --- 1. FETCH ASSIGNED EVENT ---
 $event_stmt = $conn->prepare("
     SELECT e.id, e.title, e.venue, e.event_date, e.status 
     FROM events e 
@@ -34,7 +34,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt->bind_param("ii", $judge_id_to_unlock, $round_id_unlock);
         
         if ($stmt->execute()) {
-            // FIX: Redirect immediately to prevent "Double Unlock" on refresh
             header("Location: judge_coordinator.php?success=unlocked");
             exit();
         } else {
@@ -50,12 +49,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $password = trim($_POST['password']);
         $is_chairman = isset($_POST['is_chairman']) ? 1 : 0;
 
-        // 1. Check if user exists
+        // Check if user exists
         $check = $conn->prepare("SELECT id FROM users WHERE email = ?");
         $check->bind_param("s", $email);
         $check->execute();
         $res = $check->get_result();
         
+        $judge_user_id = null;
+
         if ($res->num_rows > 0) {
             $user_row = $res->fetch_assoc();
             $judge_user_id = $user_row['id'];
@@ -72,7 +73,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-        if (isset($judge_user_id)) {
+        if ($judge_user_id) {
             $link_check = $conn->prepare("SELECT id FROM event_judges WHERE event_id = ? AND judge_id = ?");
             $link_check->bind_param("ii", $event_id, $judge_user_id);
             $link_check->execute();
@@ -81,7 +82,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $link = $conn->prepare("INSERT INTO event_judges (event_id, judge_id, is_chairman, status) VALUES (?, ?, ?, 'Active')");
                 $link->bind_param("iii", $event_id, $judge_user_id, $is_chairman);
                 if ($link->execute()) {
-                    // FIX: Redirect on success
                     header("Location: judge_coordinator.php?success=added");
                     exit();
                 }
@@ -108,7 +108,7 @@ if ($event_id) {
     }
 }
 
-// --- 4. FETCH JUDGES & STATUSES ---
+// --- 4. FETCH JUDGES ---
 $judges = [];
 $total_judges = 0;
 $submitted_count = 0;
@@ -141,9 +141,8 @@ if ($event_id) {
     }
 }
 
-// Handle GET Messages for Toast (Displayed AFTER redirect)
-$message = "";
-$error = "";
+// Toast Logic
+$message = ""; $error = "";
 if (isset($_GET['success'])) {
     if ($_GET['success'] == 'unlocked') $message = "Scorecard unlocked successfully.";
     if ($_GET['success'] == 'added') $message = "Judge added successfully!";
@@ -159,260 +158,303 @@ if (isset($_GET['error'])) {
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Judge Coordinator - BPMS</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Judge Coordinator</title>
     <link rel="stylesheet" href="./assets/css/style.css">
     <link rel="stylesheet" href="./assets/fontawesome/css/all.min.css">
     <style>
-        .status-badge { padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; }
-        .status-badge.submitted { background-color: #D1FAE5; color: #059669; }
-        .status-badge.pending { background-color: #FEF3C7; color: #D97706; }
+        :root { --primary: #F59E0B; --dark: #111827; --bg: #f3f4f6; }
         
-        .btn-unlock { background: none; border: none; color: #DC2626; cursor: pointer; text-decoration: underline; font-size: 13px; }
-        .btn-unlock:hover { color: #B91C1C; }
-        
-        .monitor-card { background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); overflow: hidden; }
-        .monitor-table { width: 100%; border-collapse: collapse; }
-        .monitor-table th, .monitor-table td { padding: 15px 20px; text-align: left; border-bottom: 1px solid #f3f4f6; }
-        .monitor-table th { background-color: #f9fafb; font-weight: 600; color: #374151; font-size: 13px; text-transform: uppercase; }
-        .monitor-table tr:last-child td { border-bottom: none; }
-        
-        .sidebar { background-color: #111827; } 
-        
-        /* Modal Styles */
-        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; justify-content: center; align-items: center; z-index: 1000; }
-        .modal-content { background: white; padding: 25px; width: 400px; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
-        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
-        .modal-header h3 { margin: 0; font-size: 18px; color: #111827; }
-        .close-modal { background: none; border: none; font-size: 20px; cursor: pointer; color: #6b7280; }
-        .form-group { margin-bottom: 15px; }
-        .form-group label { display: block; margin-bottom: 5px; font-size: 14px; font-weight: 600; color: #374151; }
-        .form-control { width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; }
-        .btn-primary { width: 100%; padding: 10px; background-color: #F59E0B; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; }
-        .btn-primary:hover { background-color: #d97706; }
-        .chairman-tag { background-color: #4F46E5; color: white; padding: 2px 6px; border-radius: 4px; font-size: 10px; margin-left: 5px; vertical-align: middle; }
-    </style>
-    
-    <script>
-        if (window.history.replaceState) {
-            const url = new URL(window.location.href);
-            if(url.searchParams.has('success') || url.searchParams.has('error')) {
-                // Keep the toast visible but clean the URL so refresh doesn't re-trigger anything
-                const cleanUrl = window.location.pathname;
-                window.history.replaceState(null, '', cleanUrl);
-            }
+        body { 
+            background-color: var(--bg); font-family: 'Segoe UI', sans-serif; 
+            margin: 0; padding-bottom: 60px; overflow-y: auto; -webkit-overflow-scrolling: touch; 
         }
-    </script>
+
+        /* NAVBAR */
+        .navbar {
+            background: var(--dark); color: white; height: 60px;
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 15px; position: sticky; top: 0; z-index: 100;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .navbar-title { font-size: 16px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
+        .btn-logout {
+            background: rgba(255,255,255,0.1); color: #fca5a5; text-decoration: none;
+            padding: 8px 12px; border-radius: 6px; font-size: 13px; font-weight: 600;
+            display: flex; align-items: center; gap: 6px;
+        }
+
+        /* CONTAINER */
+        .container { max-width: 1200px; margin: 0 auto; padding: 15px; }
+
+        /* STATS GRID */
+        .stats-grid { 
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); 
+            gap: 10px; margin-bottom: 20px; 
+        }
+        .stat-card { 
+            background: white; padding: 15px; border-radius: 12px; 
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05); display: flex; 
+            align-items: center; gap: 15px; border-left: 4px solid var(--primary);
+        }
+        .stat-icon { 
+            width: 40px; height: 40px; border-radius: 50%; display: flex; 
+            align-items: center; justify-content: center; font-size: 18px; 
+        }
+        .stat-info h3 { margin: 0; font-size: 20px; color: #111827; }
+        .stat-info p { margin: 0; font-size: 12px; color: #6b7280; font-weight: 600; }
+
+        /* HEADER & ACTIONS */
+        .page-header { 
+            display: flex; justify-content: space-between; align-items: center; 
+            margin-bottom: 15px; background: white; padding: 15px; 
+            border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        .header-title { font-size: 16px; font-weight: 700; color: #374151; }
+        .btn-add { 
+            background: var(--primary); color: white; border: none; 
+            padding: 10px 16px; border-radius: 8px; font-weight: 700; 
+            font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 6px;
+        }
+
+        /* RESPONSIVE TABLE / CARDS */
+        .monitor-container { background: white; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); overflow: hidden; }
+        
+        /* Desktop Table View */
+        .monitor-table { width: 100%; border-collapse: collapse; display: none; } /* Hidden on mobile */
+        .monitor-table th, .monitor-table td { padding: 15px; text-align: left; border-bottom: 1px solid #f3f4f6; }
+        .monitor-table th { background: #f9fafb; font-size: 12px; text-transform: uppercase; color: #6b7280; }
+        
+        /* Mobile Card View */
+        .mobile-list { display: flex; flex-direction: column; gap: 10px; }
+        .judge-card { 
+            background: white; padding: 15px; border-radius: 12px; 
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05); border: 1px solid #e5e7eb;
+            display: flex; flex-direction: column; gap: 10px;
+        }
+        .jc-header { display: flex; justify-content: space-between; align-items: center; }
+        .jc-name { font-weight: 700; color: #111827; font-size: 15px; }
+        .jc-email { color: #6b7280; font-size: 12px; }
+        .jc-status { display: flex; justify-content: space-between; align-items: center; background: #f9fafb; padding: 8px; border-radius: 6px; font-size: 12px; }
+        
+        /* Badges & Buttons */
+        .badge { padding: 4px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+        .badge-submitted { background: #d1fae5; color: #065f46; }
+        .badge-pending { background: #fef3c7; color: #b45309; }
+        .chairman-tag { background: #4f46e5; color: white; padding: 2px 6px; border-radius: 4px; font-size: 9px; margin-left: 5px; vertical-align: middle; }
+
+        .btn-unlock { 
+            background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; 
+            padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; 
+            cursor: pointer; display: inline-flex; align-items: center; gap: 5px; text-decoration: none;
+        }
+
+        /* MEDIA QUERY */
+        @media(min-width: 768px) {
+            .monitor-table { display: table; }
+            .mobile-list { display: none; }
+        }
+
+        /* MODAL */
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: none; justify-content: center; align-items: center; z-index: 2000; backdrop-filter: blur(2px); }
+        .modal-content { background: white; width: 90%; max-width: 400px; padding: 20px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
+        .form-group { margin-bottom: 15px; }
+        .form-label { display: block; margin-bottom: 5px; font-size: 13px; font-weight: 600; color: #374151; }
+        .form-control { width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; box-sizing: border-box; }
+        .btn-submit { width: 100%; padding: 12px; background: var(--primary); color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; }
+    </style>
 </head>
 <body>
 
-    <div class="main-wrapper">
-        
-        <div class="sidebar">
-            <div class="sidebar-header">
-                <img src="assets/images/BPMS_logo.png" alt="BPMS Logo" class="sidebar-logo">
-                <div class="brand-text">
-                    <div class="brand-name">BPMS</div>
-                    <div class="brand-subtitle">Coordinator Panel</div>
-                </div>
-            </div>
-            
-            <ul class="sidebar-menu">
-                <li><a href="judge_coordinator.php" class="active"><i class="fas fa-gavel"></i> <span>Monitor Judges</span></a></li>
-            </ul>
-            
-            <div class="sidebar-footer">
-                <a href="settings.php">
-                    <i class="fas fa-cog"></i> <span>Settings</span>
-                </a>
-                <a href="logout.php" onclick="return confirm('Logout?');">
-                    <i class="fas fa-sign-out-alt"></i> <span>Logout</span>
-                </a>
+<nav class="navbar">
+    <a href="logout.php" class="btn-logout" onclick="return confirm('Logout?')">
+        <i class="fas fa-sign-out-alt"></i> <span>Logout</span>
+    </a>
+    <div class="navbar-title">Coordinator Panel</div>
+    <div style="width: 70px;"></div>
+</nav>
+
+<div class="container">
+    <div id="toast-container"></div>
+
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-icon" style="background: #eff6ff; color: #2563eb;"><i class="fas fa-users"></i></div>
+            <div class="stat-info">
+                <h3><?= $total_judges ?></h3>
+                <p>Total Judges</p>
             </div>
         </div>
-
-        <div class="content-area">
-            
-            <div class="navbar">
-                <div class="navbar-title">Judge Coordinator</div>
-                <div style="font-size: 14px; color: #6b7280;">
-                    Active Event: <strong><?= htmlspecialchars($event_name) ?></strong>
-                </div>
+        <div class="stat-card" style="border-left-color: #10b981;">
+            <div class="stat-icon" style="background: #d1fae5; color: #059669;"><i class="fas fa-check-double"></i></div>
+            <div class="stat-info">
+                <h3><?= $submitted_count ?> / <?= $total_judges ?></h3>
+                <p>Submitted</p>
             </div>
+        </div>
+        <div class="stat-card" style="border-left-color: #6366f1;">
+            <div class="stat-icon" style="background: #e0e7ff; color: #4338ca;"><i class="fas fa-layer-group"></i></div>
+            <div class="stat-info">
+                <h3 style="font-size:16px;"><?= htmlspecialchars($active_round_title) ?></h3>
+                <p>Active Round</p>
+            </div>
+        </div>
+    </div>
 
-            <div class="container">
-                
-                <?php if ($message): ?>
-                    <div class="toast success" style="margin-bottom: 20px; background: #10B981; color: white; padding: 10px; border-radius: 6px;">
-                        <i class="fas fa-check-circle"></i> <?= htmlspecialchars($message) ?>
-                    </div>
-                <?php endif; ?>
-                
-                <?php if ($error): ?>
-                    <div class="toast error" style="margin-bottom: 20px; background: #EF4444; color: white; padding: 10px; border-radius: 6px;">
-                        <i class="fas fa-exclamation-circle"></i> <?= htmlspecialchars($error) ?>
-                    </div>
-                <?php endif; ?>
+    <div class="page-header">
+        <div class="header-title">
+            Judge Monitoring
+            <div style="font-size:12px; color:#6b7280; font-weight:400;"><?= htmlspecialchars($event_name) ?></div>
+        </div>
+        <button class="btn-add" onclick="document.getElementById('addJudgeModal').style.display='flex'">
+            <i class="fas fa-plus"></i> Add Judge
+        </button>
+    </div>
 
-                <div class="stats-grid">
-                    <div class="stat-card">
-                        <div class="stat-icon" style="background-color: rgba(59, 130, 246, 0.1); color: #2563EB;">
-                            <i class="fas fa-users"></i>
-                        </div>
-                        <div class="stat-info">
-                            <h3><?= $total_judges ?></h3>
-                            <p>Total Judges</p>
-                        </div>
-                    </div>
+    <?php if (empty($judges)): ?>
+        <div style="text-align:center; padding:40px; color:#9ca3af; background:white; border-radius:12px;">
+            <i class="fas fa-user-slash" style="font-size:32px; margin-bottom:10px;"></i>
+            <p>No judges assigned to this event.</p>
+        </div>
+    <?php else: ?>
+        
+        <div class="monitor-container">
+            <table class="monitor-table">
+                <thead>
+                    <tr>
+                        <th>Judge Name</th>
+                        <th>Email / ID</th>
+                        <th>Status (<?= htmlspecialchars($active_round_title) ?>)</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($judges as $j): ?>
+                    <tr>
+                        <td>
+                            <strong><?= htmlspecialchars($j['name']) ?></strong>
+                            <?php if($j['is_chairman']): ?><span class="chairman-tag">CHAIRMAN</span><?php endif; ?>
+                        </td>
+                        <td style="color:#6b7280; font-size:13px;"><?= htmlspecialchars($j['email']) ?></td>
+                        <td>
+                            <?php if ($j['round_status'] === 'Submitted'): ?>
+                                <span class="badge badge-submitted"><i class="fas fa-check"></i> Submitted</span>
+                                <div style="font-size:11px; color:#6b7280; margin-top:4px;">
+                                    <?= date('h:i A', strtotime($j['submitted_at'])) ?>
+                                </div>
+                            <?php else: ?>
+                                <span class="badge badge-pending"><i class="fas fa-clock"></i> Pending</span>
+                            <?php endif; ?>
+                        </td>
+                        <td>
+                            <?php if ($active_round_id && $j['round_status'] === 'Submitted'): ?>
+                                <form method="POST" onsubmit="return confirm('Unlock scorecard for <?= $j['name'] ?>?');">
+                                    <input type="hidden" name="action" value="unlock_scorecard">
+                                    <input type="hidden" name="judge_id" value="<?= $j['id'] ?>">
+                                    <input type="hidden" name="round_id" value="<?= $active_round_id ?>">
+                                    <button type="submit" class="btn-unlock"><i class="fas fa-lock-open"></i> Unlock</button>
+                                </form>
+                            <?php else: ?>
+                                <span style="color:#d1d5db;">--</span>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
 
-                    <div class="stat-card">
-                        <div class="stat-icon" style="background-color: rgba(16, 185, 129, 0.1); color: #10B981;">
-                            <i class="fas fa-check-double"></i>
-                        </div>
-                        <div class="stat-info">
-                            <h3><?= $submitted_count ?> / <?= $total_judges ?></h3>
-                            <p>Submitted (<?= htmlspecialchars($active_round_title) ?>)</p>
-                        </div>
-                    </div>
-                    
-                    <div class="stat-card">
-                        <div class="stat-icon" style="background-color: rgba(245, 158, 11, 0.1); color: #F59E0B;">
-                            <i class="fas fa-layer-group"></i>
-                        </div>
-                        <div class="stat-info">
-                            <h3 style="font-size: 18px;"><?= htmlspecialchars($active_round_title) ?></h3>
-                            <p>Current Active Round</p>
-                        </div>
+        <div class="mobile-list">
+            <?php foreach ($judges as $j): ?>
+            <div class="judge-card">
+                <div class="jc-header">
+                    <div class="jc-name">
+                        <?= htmlspecialchars($j['name']) ?>
+                        <?php if($j['is_chairman']): ?><span class="chairman-tag">CHAIRMAN</span><?php endif; ?>
                     </div>
                 </div>
-
-                <div class="card-section">
-                    <div class="card-title" style="display:flex; justify-content:space-between; align-items:center;">
-                        <span>Judge Monitoring Panel</span>
-                        <div style="display:flex; gap:10px;">
-                            <button onclick="document.getElementById('addJudgeModal').style.display='flex'" style="background:#F59E0B; border:none; padding:8px 12px; border-radius:4px; color:white; cursor:pointer; font-size:13px;">
-                                <i class="fas fa-plus"></i> Add Judge
-                            </button>
-                            <button onclick="location.reload()" style="background:none; border:none; cursor:pointer; color:#6b7280;">
-                                <i class="fas fa-sync-alt"></i> Refresh
-                            </button>
-                        </div>
-                    </div>
-                    
-                    <?php if (!$event_id): ?>
-                        <p style="padding: 20px; color: #6b7280; text-align: center;">You are not assigned to an active event.</p>
+                <div class="jc-email"><?= htmlspecialchars($j['email']) ?></div>
+                
+                <div class="jc-status">
+                    <span>Round Status:</span>
+                    <?php if ($j['round_status'] === 'Submitted'): ?>
+                        <span style="color:#059669; font-weight:700;"><i class="fas fa-check"></i> Submitted</span>
                     <?php else: ?>
-                    
-                    <div class="monitor-card">
-                        <table class="monitor-table">
-                            <thead>
-                                <tr>
-                                    <th>Judge Name</th>
-                                    <th>Email / Login ID</th>
-                                    <th>Scoring Status</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php if (count($judges) > 0): ?>
-                                    <?php foreach ($judges as $judge): ?>
-                                    <tr>
-                                        <td>
-                                            <div style="font-weight: 600; color: #111827;">
-                                                <?= htmlspecialchars($judge['name']) ?>
-                                                <?php if($judge['is_chairman']): ?>
-                                                    <span class="chairman-tag">CHAIRMAN</span>
-                                                <?php endif; ?>
-                                            </div>
-                                        </td>
-                                        <td><?= htmlspecialchars($judge['email']) ?></td>
-                                        <td>
-                                            <?php if (!$active_round_id): ?>
-                                                <span style="color:#9ca3af;">Round not started</span>
-                                            <?php else: ?>
-                                                <?php if ($judge['round_status'] === 'Submitted'): ?>
-                                                    <span class="status-badge submitted"><i class="fas fa-check"></i> Submitted</span>
-                                                    <div style="font-size: 11px; color: #6b7280; margin-top: 2px;">
-                                                        at <?= date('h:i A', strtotime($judge['submitted_at'])) ?>
-                                                    </div>
-                                                <?php else: ?>
-                                                    <span class="status-badge pending"><i class="fas fa-hourglass-half"></i> Pending</span>
-                                                <?php endif; ?>
-                                            <?php endif; ?>
-                                        </td>
-                                        <td>
-                                            <?php if ($active_round_id && $judge['round_status'] === 'Submitted'): ?>
-                                                <form method="POST" onsubmit="return confirm('Are you sure you want to unlock this scorecard?');">
-                                                    <input type="hidden" name="action" value="unlock_scorecard">
-                                                    <input type="hidden" name="judge_id" value="<?= $judge['id'] ?>">
-                                                    <input type="hidden" name="round_id" value="<?= $active_round_id ?>">
-                                                    <button type="submit" class="btn-unlock"><i class="fas fa-lock-open"></i> Unlock / Re-open</button>
-                                                </form>
-                                            <?php elseif ($active_round_id): ?>
-                                                <span style="color: #9ca3af; font-size: 13px;">Waiting for submission...</span>
-                                            <?php else: ?>
-                                                -
-                                            <?php endif; ?>
-                                        </td>
-                                    </tr>
-                                    <?php endforeach; ?>
-                                <?php else: ?>
-                                    <tr>
-                                        <td colspan="4" style="text-align:center; color:#6b7280;">No judges assigned to this event.</td>
-                                    </tr>
-                                <?php endif; ?>
-                            </tbody>
-                        </table>
-                    </div>
+                        <span style="color:#d97706; font-weight:700;"><i class="fas fa-clock"></i> Pending</span>
                     <?php endif; ?>
                 </div>
 
+                <?php if ($active_round_id && $j['round_status'] === 'Submitted'): ?>
+                    <form method="POST" style="width:100%;" onsubmit="return confirm('Unlock scorecard?');">
+                        <input type="hidden" name="action" value="unlock_scorecard">
+                        <input type="hidden" name="judge_id" value="<?= $j['id'] ?>">
+                        <input type="hidden" name="round_id" value="<?= $active_round_id ?>">
+                        <button type="submit" class="btn-unlock" style="width:100%; justify-content:center;">
+                            <i class="fas fa-lock-open"></i> Unlock Scorecard
+                        </button>
+                    </form>
+                <?php endif; ?>
             </div>
+            <?php endforeach; ?>
         </div>
-    </div>
 
-    <div id="addJudgeModal" class="modal-overlay">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3>Add New Judge</h3>
-                <button class="close-modal" onclick="document.getElementById('addJudgeModal').style.display='none'">&times;</button>
+    <?php endif; ?>
+</div>
+
+<div id="addJudgeModal" class="modal-overlay">
+    <div class="modal-content">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+            <h3 style="margin:0;">Add New Judge</h3>
+            <button onclick="document.getElementById('addJudgeModal').style.display='none'" style="background:none; border:none; font-size:24px;">&times;</button>
+        </div>
+        <form method="POST">
+            <input type="hidden" name="action" value="add_judge">
+            
+            <div class="form-group">
+                <label class="form-label">Name</label>
+                <input type="text" name="name" class="form-control" required>
             </div>
-            <form method="POST">
-                <input type="hidden" name="action" value="add_judge">
-                
-                <div class="form-group">
-                    <label>Full Name</label>
-                    <input type="text" name="name" class="form-control" required placeholder="e.g. Juan Dela Cruz">
-                </div>
-
-                <div class="form-group">
-                    <label>Email Address</label>
-                    <input type="email" name="email" class="form-control" required placeholder="e.g. juan@bpms.com">
-                </div>
-
-                <div class="form-group">
-                    <label>Password</label>
-                    <input type="password" name="password" class="form-control" required placeholder="••••••••">
-                </div>
-
-                <div class="form-group" style="display:flex; align-items:center; gap:10px;">
-                    <input type="checkbox" id="is_chairman" name="is_chairman" style="width:16px; height:16px;">
-                    <label for="is_chairman" style="margin:0; cursor:pointer;">Assign as Chairman of Judges</label>
-                </div>
-
-                <button type="submit" class="btn-primary">Register Judge</button>
-            </form>
-        </div>
+            <div class="form-group">
+                <label class="form-label">Email</label>
+                <input type="email" name="email" class="form-control" required>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Password</label>
+                <input type="text" name="password" class="form-control" required>
+            </div>
+            <div class="form-group" style="display:flex; align-items:center; gap:10px;">
+                <input type="checkbox" id="is_chairman" name="is_chairman" style="width:18px; height:18px;">
+                <label for="is_chairman" style="margin:0;">Assign as Chairman</label>
+            </div>
+            <button type="submit" class="btn-submit">Register Judge</button>
+        </form>
     </div>
+</div>
 
-    <script>
-        // Close modal when clicking outside
-        window.onclick = function(event) {
-            if (event.target == document.getElementById('addJudgeModal')) {
-                document.getElementById('addJudgeModal').style.display = "none";
-            }
-        }
-    </script>
+<script>
+    // Simple Toast Logic
+    function showToast(msg, type='success') {
+        const div = document.createElement('div');
+        div.style.position = 'fixed'; div.style.top = '20px'; div.style.right = '20px';
+        div.style.padding = '12px 20px'; div.style.borderRadius = '8px'; div.style.color = 'white';
+        div.style.background = type === 'success' ? '#10B981' : '#EF4444';
+        div.style.zIndex = '3000'; div.style.boxShadow = '0 4px 6px rgba(0,0,0,0.1)';
+        div.innerHTML = msg;
+        document.body.appendChild(div);
+        setTimeout(() => div.remove(), 3000);
+    }
+
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.has('success')) {
+        if (urlParams.get('success') === 'unlocked') showToast('Scorecard Unlocked');
+        if (urlParams.get('success') === 'added') showToast('Judge Added Successfully');
+        window.history.replaceState({}, document.title, window.location.pathname);
+    }
+    if (urlParams.has('error')) {
+        showToast(urlParams.get('error'), 'error');
+        window.history.replaceState({}, document.title, window.location.pathname);
+    }
+</script>
 
 </body>
 </html>

@@ -6,27 +6,42 @@ require_once __DIR__ . '/../app/config/database.php';
 
 $manager_id = $_SESSION['user_id'];
 $view = $_GET['view'] ?? 'active'; 
-$status_filter = ($view === 'archived') ? 'Inactive' : 'Active';
+$search = trim($_GET['search'] ?? '');
 
-$evt_sql = "SELECT id, title FROM events WHERE manager_id = ? AND status = 'Active' LIMIT 1";
-$evt_stmt = $conn->prepare($evt_sql);
+// 1. GET ACTIVE EVENT
+$evt_stmt = $conn->prepare("SELECT id, title FROM events WHERE manager_id = ? AND status = 'Active' LIMIT 1");
 $evt_stmt->bind_param("i", $manager_id);
 $evt_stmt->execute();
 $active_event = $evt_stmt->get_result()->fetch_assoc();
+$event_id = $active_event['id'] ?? null;
 
+// 2. GET ACTIVE ROUND (For Status Checking)
+$active_round_id = null;
+if ($event_id) {
+    $r_stmt = $conn->query("SELECT id FROM rounds WHERE event_id = $event_id AND status = 'Active' LIMIT 1");
+    if ($r = $r_stmt->fetch_assoc()) $active_round_id = $r['id'];
+}
+
+// 3. FETCH JUDGES
 $judges = [];
-if ($active_event) {
-    $event_id = $active_event['id'];
-    $sql = "SELECT ej.id as link_id, ej.is_chairman, ej.judge_id, 
-                   u.name, u.email 
-            FROM event_judges ej 
-            JOIN users u ON ej.judge_id = u.id 
+if ($event_id) {
+    $status_filter = ($view === 'archived') ? "ej.status = 'Inactive'" : "ej.status = 'Active'";
+    $search_term = "%$search%";
+
+    $sql = "SELECT u.id, u.name, u.email, ej.id as link_id, ej.is_chairman,
+                   COALESCE(jrs.status, 'Pending') as round_status
+            FROM event_judges ej
+            JOIN users u ON ej.judge_id = u.id
+            LEFT JOIN judge_round_status jrs ON u.id = jrs.judge_id AND jrs.round_id = ?
             WHERE ej.event_id = ? 
-              AND ej.status = ?
-              AND ej.is_deleted = 0";
-            
+              AND $status_filter 
+              AND ej.is_deleted = 0
+              AND (u.name LIKE ? OR u.email LIKE ?)
+            ORDER BY ej.is_chairman DESC, u.name ASC";
+
     $stmt = $conn->prepare($sql);
-    $stmt->bind_param("is", $event_id, $status_filter);
+    $round_bind = $active_round_id ?? 0;
+    $stmt->bind_param("iiss", $round_bind, $event_id, $search_term, $search_term);
     $stmt->execute();
     $judges = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 }
@@ -36,19 +51,117 @@ if ($active_event) {
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Manage Judges - BPMS</title>
-    <link rel="stylesheet" href="./assets/css/style.css?v=5">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Manage Judges</title>
+    <link rel="stylesheet" href="./assets/css/style.css?v=8">
     <link rel="stylesheet" href="./assets/fontawesome/css/all.min.css">
+    <style>
+        /* --- LAYOUT FIXES --- */
+        body { background-color: #f3f4f6; font-family: 'Segoe UI', sans-serif; padding-bottom: 60px; }
+        
+        /* Forces container to be full width like your organizers.php */
+        .container { max-width: 100%; margin: 0; padding: 20px; }
+        
+        .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        
+        /* --- SIMPLE TABS --- */
+        .tabs { 
+            display: flex; gap: 20px; border-bottom: 2px solid #e5e7eb; margin-bottom: 20px; 
+        }
+        .tab-link { 
+            padding: 10px 5px; text-decoration: none; color: #6b7280; 
+            font-weight: 600; font-size: 14px; border-bottom: 3px solid transparent; 
+            margin-bottom: -2px; transition: 0.2s;
+        }
+        .tab-link:hover { color: #111827; }
+        
+        /* Active State: Gold Text + Gold Line */
+        .tab-link.active { 
+            color: #F59E0B; 
+            border-bottom-color: #F59E0B; 
+        }
+
+        /* --- ADD BUTTON --- */
+        .btn-add { 
+            background: #F59E0B; color: white; border: none; padding: 10px 20px; 
+            border-radius: 6px; font-weight: 700; cursor: pointer; 
+            display: flex; align-items: center; gap: 8px; font-size: 14px;
+        }
+        .btn-add:hover { background: #d97706; }
+
+        /* --- CARD GRID --- */
+        .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 15px; }
+        
+        .judge-card { background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border: 1px solid #e5e7eb; display: flex; flex-direction: column; }
+        .judge-card.chairman { border-top: 4px solid #4F46E5; } /* Chairman Indicator */
+
+        .card-body { padding: 15px; flex: 1; }
+        
+        .j-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 5px; }
+        .j-name { font-weight: 700; color: #1f2937; font-size: 16px; }
+        
+        /* Status Badges */
+        .badge-status { font-size: 11px; padding: 2px 8px; border-radius: 12px; font-weight: 700; text-transform: uppercase; }
+        .st-pending { background: #fff7ed; color: #c2410c; border: 1px solid #ffedd5; }
+        .st-completed { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+
+        .j-role-tag { font-size: 10px; background: #e0e7ff; color: #4338ca; padding: 2px 6px; border-radius: 4px; font-weight: 700; text-transform: uppercase; margin-left: 5px; vertical-align: middle; }
+        .j-email { font-size: 13px; color: #6b7280; display: flex; align-items: center; gap: 5px; }
+
+        /* --- ACTION FOOTER --- */
+        .card-actions { 
+            background: #f9fafb; padding: 10px; border-top: 1px solid #f3f4f6; 
+            display: flex; justify-content: space-between; align-items: center; gap: 10px;
+        }
+
+        /* BUTTON STYLES (With Text) */
+        .btn-action {
+            display: inline-flex; align-items: center; gap: 5px;
+            padding: 6px 12px; border-radius: 5px; font-size: 12px; 
+            font-weight: 600; cursor: pointer; border: 1px solid transparent;
+            transition: 0.2s; text-decoration: none;
+        }
+
+        /* 1. Edit (Blue) */
+        .btn-edit { background: #eff6ff; color: #2563eb; border-color: #bfdbfe; }
+        .btn-edit:hover { background: #dbeafe; }
+
+        /* 2. Remind (Green) */
+        .btn-remind { background: #f0fdf4; color: #16a34a; border-color: #bbf7d0; }
+        .btn-remind:hover { background: #dcfce7; }
+
+        /* 3. Reset (Orange/Yellow) */
+        .btn-reset { background: #fffbeb; color: #d97706; border-color: #fde68a; }
+        .btn-reset:hover { background: #fef3c7; }
+
+        /* 4. Archive (Red) */
+        .btn-archive { background: #fef2f2; color: #dc2626; border-color: #fecaca; }
+        .btn-archive:hover { background: #fee2e2; }
+
+        /* LEFT SIDE: Unlock Button */
+        .btn-unlock { 
+            background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; 
+            padding: 8px 12px; border-radius: 6px; font-size: 12px; font-weight: 700; 
+            cursor: pointer; display: flex; align-items: center; gap: 6px; 
+        }
+        .btn-unlock:hover { background: #fecaca; }
+        
+        .btn-unlock.disabled { 
+            background: #f3f4f6; color: #9ca3af; border-color: #e5e7eb; 
+            cursor: not-allowed; opacity: 0.7; 
+        }
+
+        .action-group { display: flex; gap: 5px; flex-wrap: wrap; justify-content: flex-end; }
+
+        /* Modal */
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; justify-content: center; align-items: center; z-index: 1000; }
+        .modal-content { background: white; padding: 25px; width: 400px; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.15); }
+        .form-group { margin-bottom: 15px; }
+        .form-control { width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 5px; }
+        .btn-submit { background: #F59E0B; color: white; border: none; padding: 10px 20px; border-radius: 5px; font-weight: bold; cursor: pointer; width: 100%; }
+    </style>
 </head>
 <body>
-
-    <div id="globalSpinner" class="loading-overlay">
-        <div style="text-align:center;">
-            <div class="spinner"></div>
-            <p style="margin-top:15px; font-weight:600; color:#374151;">Processing Request...</p>
-        </div>
-    </div>
 
     <div id="sidebarOverlay" class="sidebar-overlay" onclick="toggleSidebar()"></div>
 
@@ -58,9 +171,7 @@ if ($active_event) {
         <div class="content-area">
             <div class="navbar">
                 <div style="display:flex; align-items:center; gap: 15px;">
-                    <button class="menu-toggle" onclick="toggleSidebar()">
-                        <i class="fas fa-bars"></i>
-                    </button>
+                    <button class="menu-toggle" onclick="toggleSidebar()"><i class="fas fa-bars"></i></button>
                     <div class="navbar-title">Manage Judges</div>
                 </div>
             </div>
@@ -69,112 +180,142 @@ if ($active_event) {
                 <div id="toast-container" class="toast-container"></div>
 
                 <?php if (!$active_event): ?>
-                    <div style="text-align:center; padding: 40px; color: #6b7280; background:white; border-radius:8px;">
-                        <i class="fas fa-calendar-plus" style="font-size: 40px; margin-bottom: 10px;"></i>
+                    <div style="text-align:center; padding: 40px; background:white; border-radius:8px;">
                         <h2>No Active Event</h2>
-                        <p>Please go to Settings to create an event.</p>
+                        <p>Go to settings to activate an event.</p>
                     </div>
                 <?php else: ?>
 
                     <div class="page-header">
-                        <div>
-                            <h2 style="color: #111827; margin:0;">
-                                <?= ($view === 'archived') ? 'Archived Judges' : 'Judge Panel' ?>
-                            </h2>
-                            <p style="color: #6b7280; font-size: 13px; margin-top:5px;">Event: <strong><?= htmlspecialchars($active_event['title']) ?></strong></p>
-                        </div>
-                        
-                        <div class="header-actions">
-                            <?php if ($view === 'active'): ?>
-                                <a href="?view=archived" class="btn-secondary"><i class="fas fa-archive"></i> View Archived</a>
-                                <button class="btn-add" onclick="openModal('addModal')"><i class="fas fa-plus"></i> Add Judge</button>
-                            <?php else: ?>
-                                <a href="?view=active" class="btn-secondary">← Back to Active List</a>
-                            <?php endif; ?>
-                        </div>
+                        <h2 style="margin:0;">Judge Panel</h2>
+                        <?php if ($view === 'active'): ?>
+                            <button class="btn-add" onclick="openModal('addModal')"><i class="fas fa-plus"></i> Add Judge</button>
+                        <?php endif; ?>
                     </div>
 
-                    <div class="table-card" style="overflow-x:auto;">
-                        <table class="data-table">
-                            <thead>
-                                <tr>
-                                    <th>Name</th>
-                                    <th>Email (Username)</th>
-                                    <th>Role</th>
-                                    <th style="text-align:right;">Action</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php if (empty($judges)): ?>
-                                    <tr><td colspan="4" style="text-align:center; padding:30px; color:#9ca3af;">No judges found.</td></tr>
-                                <?php else: ?>
-                                    <?php foreach ($judges as $j): ?>
-                                        <tr>
-                                            <td style="font-weight:600; color:#1f2937;"><?= htmlspecialchars($j['name']) ?></td>
-                                            <td style="color:#4b5563; font-size:13px;"><i class="fas fa-envelope" style="color:#9ca3af; width:15px;"></i> <?= htmlspecialchars($j['email']) ?></td>
-                                            <td><?= $j['is_chairman'] ? '<span class="badge-chairman">Chairman</span>' : '<span class="badge-judge">Judge</span>' ?></td>
-                                            <td style="text-align:right;">
-                                                <div style="display:inline-flex;">
-                                                <?php if ($view === 'active'): ?>
-                                                    <button class="icon-btn btn-edit" onclick='openEditModal(<?= json_encode($j) ?>)' title="Edit Details"><i class="fas fa-pen"></i></button>
-                                                    
-                                                    <form action="../api/resend_email.php" method="POST" style="margin:0;" onsubmit="return confirm('Send a reminder email?');">
-                                                        <input type="hidden" name="user_id" value="<?= $j['judge_id'] ?>">
-                                                        <input type="hidden" name="action_type" value="reminder">
-                                                        <button type="submit" class="icon-btn btn-reminder" title="Send Reminder"><i class="fas fa-paper-plane"></i></button>
-                                                    </form>
+                    <div class="tabs">
+                        <a href="?view=active" class="tab-link <?= $view === 'active' ? 'active' : '' ?>">Active Judges</a>
+                        <a href="?view=archived" class="tab-link <?= $view === 'archived' ? 'active' : '' ?>">Archived</a>
+                    </div>
 
-                                                    <form action="../api/resend_email.php" method="POST" style="margin:0;" onsubmit="return confirm('WARNING: Reset password?');">
-                                                        <input type="hidden" name="user_id" value="<?= $j['judge_id'] ?>">
-                                                        <input type="hidden" name="action_type" value="reset">
-                                                        <button type="submit" class="icon-btn btn-reset" title="Reset Password"><i class="fas fa-key"></i></button>
-                                                    </form>
-
-                                                    <button type="button" class="icon-btn btn-archive" onclick="triggerAction('remove', <?= $j['link_id'] ?>)" title="Archive"><i class="fas fa-archive"></i></button>
-                                                <?php else: ?>
-                                                    <button type="button" class="icon-btn btn-restore" onclick="triggerAction('restore', <?= $j['link_id'] ?>)" title="Restore"><i class="fas fa-undo"></i></button>
-                                                    <button type="button" class="icon-btn btn-delete" onclick="triggerAction('delete', <?= $j['link_id'] ?>)" title="Remove Completely"><i class="fas fa-trash"></i></button>
+                    <?php if (!empty($judges)): ?>
+                        <div class="card-grid">
+                            <?php foreach ($judges as $j): ?>
+                                <div class="judge-card <?= $j['is_chairman'] ? 'chairman' : '' ?>">
+                                    <div class="card-body">
+                                        <div class="j-header">
+                                            <div>
+                                                <span class="j-name"><?= htmlspecialchars($j['name']) ?></span>
+                                                <?php if($j['is_chairman']): ?>
+                                                    <span class="j-role-tag">Chairman</span>
                                                 <?php endif; ?>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    <?php endforeach; ?>
-                                <?php endif; ?>
-                            </tbody>
-                        </table>
-                    </div>
+                                            </div>
+                                            
+                                            <?php if ($view === 'active'): ?>
+                                                <?php if ($j['round_status'] === 'Submitted'): ?>
+                                                    <span class="badge-status st-completed">Completed</span>
+                                                <?php else: ?>
+                                                    <span class="badge-status st-pending">Pending</span>
+                                                <?php endif; ?>
+                                            <?php else: ?>
+                                                <span class="badge-status st-pending" style="color:#666; background:#eee; border-color:#ddd;">Archived</span>
+                                            <?php endif; ?>
+                                        </div>
+                                        
+                                        <div class="j-email">
+                                            <i class="fas fa-envelope"></i> <?= htmlspecialchars($j['email']) ?>
+                                        </div>
+                                    </div>
+
+                                    <div class="card-actions">
+                                        
+                                        <?php if ($view === 'active'): ?>
+                                            <?php if ($active_round_id && $j['round_status'] === 'Submitted'): ?>
+                                                <form action="../api/judge.php" method="POST" onsubmit="return confirm('Unlock Scorecard?');" style="margin:0;">
+                                                    <input type="hidden" name="action" value="unlock_scorecard">
+                                                    <input type="hidden" name="judge_id" value="<?= $j['id'] ?>">
+                                                    <input type="hidden" name="round_id" value="<?= $active_round_id ?>">
+                                                    <button type="submit" class="btn-unlock">
+                                                        <i class="fas fa-lock-open"></i> Unlock
+                                                    </button>
+                                                </form>
+                                            <?php else: ?>
+                                                <button type="button" class="btn-unlock disabled" disabled title="Not submitted yet">
+                                                    <i class="fas fa-lock"></i> Unlock
+                                                </button>
+                                            <?php endif; ?>
+                                        <?php else: ?>
+                                            <div></div> 
+                                        <?php endif; ?>
+
+                                        <div class="action-group">
+                                            <?php if ($view === 'active'): ?>
+                                                <button class="btn-action btn-edit" onclick='openEditModal(<?= json_encode($j) ?>)'>
+                                                    <i class="fas fa-pen"></i> Edit
+                                                </button>
+                                                
+                                                <form action="../api/resend_email.php" method="POST" style="margin:0;" onsubmit="return confirm('Resend Invite?');">
+                                                    <input type="hidden" name="user_id" value="<?= $j['id'] ?>">
+                                                    <input type="hidden" name="action_type" value="reminder">
+                                                    <button type="submit" class="btn-action btn-remind" title="Send Email"><i class="fas fa-paper-plane"></i> Remind</button>
+                                                </form>
+
+                                                <form action="../api/resend_email.php" method="POST" style="margin:0;" onsubmit="return confirm('Reset Password?');">
+                                                    <input type="hidden" name="user_id" value="<?= $j['id'] ?>">
+                                                    <input type="hidden" name="action_type" value="reset">
+                                                    <button type="submit" class="btn-action btn-reset" title="Reset Password"><i class="fas fa-key"></i> Reset</button>
+                                                </form>
+
+                                                <form action="../api/judge.php" method="POST" style="margin:0;" onsubmit="return confirm('Archive?');">
+                                                    <input type="hidden" name="action" value="remove">
+                                                    <input type="hidden" name="id" value="<?= $j['link_id'] ?>">
+                                                    <button type="submit" class="btn-action btn-archive"><i class="fas fa-archive"></i> Archive</button>
+                                                </form>
+
+                                            <?php else: ?>
+                                                <form action="../api/judge.php" method="POST" style="margin:0;">
+                                                    <input type="hidden" name="action" value="restore">
+                                                    <input type="hidden" name="id" value="<?= $j['link_id'] ?>">
+                                                    <button type="submit" class="btn-action btn-remind"><i class="fas fa-undo"></i> Restore</button>
+                                                </form>
+                                                <form action="../api/judge.php" method="POST" style="margin:0;" onsubmit="return confirm('Delete Permanently?');">
+                                                    <input type="hidden" name="action" value="delete">
+                                                    <input type="hidden" name="id" value="<?= $j['link_id'] ?>">
+                                                    <button type="submit" class="btn-action btn-archive"><i class="fas fa-trash"></i> Delete</button>
+                                                </form>
+                                            <?php endif; ?>
+                                        </div>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php else: ?>
+                        <div style="text-align:center; padding:40px; color:#9ca3af;">No judges found.</div>
+                    <?php endif; ?>
 
                 <?php endif; ?>
             </div>
         </div>
     </div>
 
-    <form id="actionForm" action="../api/judge.php" method="POST" style="display:none;">
-        <input type="hidden" name="action" id="formAction">
-        <input type="hidden" name="id" id="formId">
-    </form>
-
     <div id="addModal" class="modal-overlay">
         <div class="modal-content">
-            <h3 style="margin-bottom:20px; color:#111827;">Add New Judge</h3>
-            <form id="addJudgeForm" action="../api/judge.php" method="POST">
+            <h3 style="margin-top:0;">Add Judge</h3>
+            <form action="../api/judge.php" method="POST">
                 <input type="hidden" name="action" value="add">
                 <input type="hidden" name="event_id" value="<?= $active_event['id'] ?? '' ?>">
                 
-                <div class="form-group"><label>Full Name</label><input type="text" name="name" class="form-control" required></div>
-                <div class="form-group"><label>Email (Login)</label><input type="email" name="email" class="form-control" required></div>
-                <div class="form-group">
-                    <label>Password</label>
-                    <input type="password" name="password" id="addPass" class="form-control" required>
-                    <i class="fas fa-eye toggle-password" onclick="togglePassword('addPass', this)"></i>
+                <div class="form-group"><label>Name</label><input type="text" name="name" class="form-control" required></div>
+                <div class="form-group"><label>Email</label><input type="email" name="email" class="form-control" required></div>
+                <div class="form-group"><label>Password</label><input type="text" name="password" class="form-control" required></div>
+                <div class="form-group" style="display:flex; gap:10px; align-items:center;">
+                    <input type="checkbox" name="is_chairman" value="1" id="chkChair">
+                    <label for="chkChair" style="margin:0;">Set as Chairman</label>
                 </div>
-                <div class="form-group" style="display:flex; align-items:center; gap:8px;">
-                    <input type="checkbox" name="is_chairman" id="chkAdd" value="1">
-                    <label for="chkAdd" style="margin:0;">Set as Chairman of Judges?</label>
-                </div>
-                <div style="text-align:right; margin-top:20px;">
-                    <button type="button" onclick="closeModal('addModal')" style="background:#e5e7eb; border:none; padding:10px 20px; border-radius:6px; font-weight:600; color:#374151; cursor: pointer;">Cancel</button>
-                    <button type="submit" id="btnAddSubmit" style="background:#F59E0B; color:white; border:none; padding:10px 20px; border-radius:6px; font-weight:600; margin-left:10px; cursor:pointer;">Save Judge</button>
+                
+                <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:20px;">
+                    <button type="button" onclick="closeModal('addModal')" style="background:#e5e7eb; border:none; padding:10px 15px; border-radius:5px; cursor:pointer;">Cancel</button>
+                    <button type="submit" class="btn-submit">Save Judge</button>
                 </div>
             </form>
         </div>
@@ -182,125 +323,65 @@ if ($active_event) {
 
     <div id="editModal" class="modal-overlay">
         <div class="modal-content">
-            <h3 style="margin-bottom:20px; color:#111827;">Edit Judge</h3>
-            <form id="editJudgeForm" action="../api/judge.php" method="POST">
+            <h3 style="margin-top:0;">Edit Judge</h3>
+            <form action="../api/judge.php" method="POST">
                 <input type="hidden" name="action" value="update">
                 <input type="hidden" name="link_id" id="edit_link_id">
-                <input type="hidden" name="judge_id" id="edit_judge_id">
                 
-                <div class="form-group"><label>Full Name</label><input type="text" name="name" id="edit_name" class="form-control" required></div>
+                <div class="form-group"><label>Name</label><input type="text" name="name" id="edit_name" class="form-control" required></div>
                 <div class="form-group"><label>Email</label><input type="email" name="email" id="edit_email" class="form-control" required></div>
-                <div class="form-group">
-                    <label>Change Password</label>
-                    <input type="password" name="password" id="editPass" class="form-control" placeholder="Leave empty to keep">
-                    <i class="fas fa-eye toggle-password" onclick="togglePassword('editPass', this)"></i>
-                </div>
-                <div class="form-group" style="display:flex; align-items:center; gap:8px;">
+                <div class="form-group"><label>New Password (Optional)</label><input type="text" name="password" class="form-control" placeholder="Leave blank to keep"></div>
+                <div class="form-group" style="display:flex; gap:10px; align-items:center;">
                     <input type="checkbox" name="is_chairman" id="edit_chairman" value="1">
-                    <label for="edit_chairman" style="margin:0;">Set as Chairman?</label>
+                    <label for="edit_chairman" style="margin:0;">Set as Chairman</label>
                 </div>
-                <div style="text-align:right; margin-top:20px;">
-                    <button type="button" onclick="closeModal('editModal')" style="background:#e5e7eb; border:none; padding:10px 20px; border-radius:6px; font-weight:600; color:#374151; cursor: pointer;">Cancel</button>
-                    <button type="submit" id="btnEditSubmit" style="background:#3b82f6; color:white; border:none; padding:10px 20px; border-radius:6px; font-weight:600; margin-left:10px; cursor:pointer;">Update</button>
+                
+                <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:20px;">
+                    <button type="button" onclick="closeModal('editModal')" style="background:#e5e7eb; border:none; padding:10px 15px; border-radius:5px; cursor:pointer;">Cancel</button>
+                    <button type="submit" class="btn-submit">Update</button>
                 </div>
             </form>
         </div>
     </div>
 
     <script>
-        // MOBILE SIDEBAR TOGGLE
         function toggleSidebar() {
             const sidebar = document.querySelector('.sidebar');
             const overlay = document.getElementById('sidebarOverlay');
-            
             if (sidebar.style.left === '0px') {
-                sidebar.style.left = '-280px'; // Close
+                sidebar.style.left = '-280px'; 
                 overlay.style.display = 'none';
             } else {
-                sidebar.style.left = '0px'; // Open
+                sidebar.style.left = '0px'; 
                 overlay.style.display = 'block';
             }
         }
 
         function openModal(id) { document.getElementById(id).style.display = 'flex'; }
         function closeModal(id) { document.getElementById(id).style.display = 'none'; }
-        
-        function openEditModal(judge) {
-            document.getElementById('edit_link_id').value = judge.link_id;
-            document.getElementById('edit_judge_id').value = judge.judge_id;
-            document.getElementById('edit_name').value = judge.name;
-            document.getElementById('edit_email').value = judge.email;
-            document.getElementById('edit_chairman').checked = (judge.is_chairman == 1);
+
+        function openEditModal(j) {
+            document.getElementById('edit_link_id').value = j.link_id;
+            document.getElementById('edit_name').value = j.name;
+            document.getElementById('edit_email').value = j.email;
+            document.getElementById('edit_chairman').checked = (j.is_chairman == 1);
             openModal('editModal');
         }
 
-        function togglePassword(inputId, icon) {
-            const input = document.getElementById(inputId);
-            if (input.type === "password") {
-                input.type = "text";
-                icon.classList.replace("fa-eye", "fa-eye-slash");
-            } else {
-                input.type = "password";
-                icon.classList.replace("fa-eye-slash", "fa-eye");
-            }
-        }
-
-        // --- SPINNER LOGIC (Standard Submit) ---
-        function setupFormLoader(formId, btnId) {
-            const form = document.getElementById(formId);
-            const btn = document.getElementById(btnId);
-            
-            if(form) {
-                form.onsubmit = function() {
-                    document.getElementById('globalSpinner').style.display = 'flex';
-                    btn.disabled = true;
-                    btn.innerText = "Processing...";
-                };
-            }
-        }
-
-        setupFormLoader('addJudgeForm', 'btnAddSubmit');
-        setupFormLoader('editJudgeForm', 'btnEditSubmit');
-
-        // Action Logic
-        function triggerAction(action, id) {
-            let msg = '';
-            if(action === 'remove') msg = 'Archive this judge?';
-            else if(action === 'restore') msg = 'Restore this judge?';
-            else if(action === 'delete') msg = 'PERMANENTLY REMOVE?\n\nThey will disappear from the list, but their account credentials remain in the database.';
-
-            if (confirm(msg)) {
-                document.getElementById('formAction').value = action;
-                document.getElementById('formId').value = id;
-                document.getElementById('actionForm').submit();
-            }
-        }
-
-        // Toast Notification
         function showToast(message, type = 'success') {
             const container = document.getElementById('toast-container');
             const toast = document.createElement('div');
-            let bgClass = type;
-            let icon = '<i class="fas fa-check-circle"></i>';
-            
-            if(type === 'error') icon = '<i class="fas fa-exclamation-circle"></i>';
-            if(type === 'warning') {
-                icon = '<i class="fas fa-exclamation-triangle"></i>';
-                toast.style.borderLeft = "4px solid #F59E0B"; 
-            }
-
             toast.className = `toast ${type}`;
+            const icon = type === 'success' ? '<i class="fas fa-check-circle"></i>' : '<i class="fas fa-exclamation-circle"></i>';
             toast.innerHTML = `${icon} <span>${message}</span>`;
             container.appendChild(toast);
-            setTimeout(() => { toast.remove(); }, 5000);
+            setTimeout(() => { toast.remove(); }, 3500);
         }
         
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.has('success')) showToast(urlParams.get('success'), 'success');
         if (urlParams.has('error')) showToast(urlParams.get('error'), 'error');
-        if (urlParams.has('warning')) showToast(urlParams.get('warning'), 'warning'); 
-
-        if (urlParams.has('success') || urlParams.has('error') || urlParams.has('warning')) {
+        if (urlParams.has('success') || urlParams.has('error')) {
             const newUrl = window.location.pathname + (urlParams.has('view') ? '?view=' + urlParams.get('view') : '');
             window.history.replaceState({}, document.title, newUrl);
         }

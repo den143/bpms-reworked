@@ -274,7 +274,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
         // C. Clean Slate: Reset statuses
         $conn->query("UPDATE event_contestants SET status = 'Eliminated' WHERE event_id = $event_id AND status IN ('Active', 'Qualified')");
-
+        $conn->query("DELETE FROM round_rankings WHERE round_id = $round_id");
         // D. INSERT SCORES & Promote Top N
         // [FIX] Prepare statement for saving results
         $save_stmt = $conn->prepare("INSERT INTO round_rankings (round_id, contestant_id, total_score, `rank`) VALUES (?, ?, ?, ?)");

@@ -137,7 +137,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     header("Location: ../public/contestant_manager.php"); 
                     break;
                 case 'Tabulator':
-                    header("Location: ../public/tabulator.php"); 
+                    header("Location: ../public/tabulator_dashboard.php");
                     break;
                 case 'Contestant':
                     header("Location: ../public/contestant_dashboard.php");

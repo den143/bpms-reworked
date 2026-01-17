@@ -12,14 +12,12 @@ function resetChairman($conn, $event_id) {
     $stmt->execute();
 }
 
-// HELPER: FAST INTERNET CHECK
-function hasInternetConnection() {
-    $connected = @fsockopen("www.google.com", 80, $errno, $errstr, 3);
-    if ($connected) {
-        fclose($connected);
-        return true;
-    }
-    return false;
+// HELPER: EMAIL QUEUE
+function queueEmail($to, $subject, $body) {
+    global $conn;
+    $stmt = $conn->prepare("INSERT INTO email_queue (recipient_email, subject, body, status) VALUES (?, ?, ?, 'pending')");
+    $stmt->bind_param("sss", $to, $subject, $body);
+    $stmt->execute();
 }
 
 // --- 1. ADD or RESTORE JUDGE ---
@@ -40,14 +38,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $msg = ""; 
 
     try {
-        // --- STEP A: DATABASE OPERATIONS ---
-        
         if ($is_chairman) {
             resetChairman($conn, $event_id);
         }
 
-        // 1. Check/Create User
-        $check = $conn->prepare("SELECT id FROM users WHERE email = ?");
+        // Check User
+        $check = $conn->prepare("SELECT id, role FROM users WHERE email = ?");
         $check->bind_param("s", $email);
         $check->execute();
         $res = $check->get_result();
@@ -55,22 +51,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $msg_prefix = ""; 
 
         if ($res->num_rows > 0) {
-            // Update Existing
             $existingUser = $res->fetch_assoc();
+            if ($existingUser['role'] !== 'Judge') {
+                throw new Exception("Email registered as '" . $existingUser['role'] . "'. Users cannot hold multiple roles.");
+            }
             $judge_id = $existingUser['id'];
-            
-            // SECURITY: Ensure we are not hijacking an admin account
-            // (Optional strict check, good practice)
-            // if ($existingUser['role'] === 'Event Manager') throw new Exception("Cannot add Event Manager as Judge");
-
             $hashed_pass = password_hash($pass, PASSWORD_DEFAULT);
-            // Force status to Active (in case they were previously archived)
             $updateUser = $conn->prepare("UPDATE users SET name = ?, password = ?, status = 'Active' WHERE id = ?");
             $updateUser->bind_param("ssi", $name, $hashed_pass, $judge_id);
             $updateUser->execute();
-            $msg_prefix = "Existing account updated & "; 
+            $msg_prefix = "Existing Judge account updated & "; 
         } else {
-            // Create New
             $hashed_pass = password_hash($pass, PASSWORD_DEFAULT);
             $stmt = $conn->prepare("INSERT INTO users (created_by, name, email, password, role, status) VALUES (?, ?, ?, ?, 'Judge', 'Active')");
             $creator = $_SESSION['user_id'];
@@ -80,7 +71,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $msg_prefix = "New judge created & ";
         }
 
-        // 2. Link Logic
+        // Link to Event
         $linkCheck = $conn->prepare("SELECT id FROM event_judges WHERE event_id = ? AND judge_id = ?");
         $linkCheck->bind_param("ii", $event_id, $judge_id);
         $linkCheck->execute();
@@ -91,68 +82,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $update = $conn->prepare("UPDATE event_judges SET status='Active', is_deleted=0, is_chairman=? WHERE id=?");
             $update->bind_param("ii", $is_chairman, $link_id);
             $update->execute();
-            $msg = $msg_prefix . "restored to event list.";
+            $msg = $msg_prefix . "restored to event.";
         } else {
             $insert = $conn->prepare("INSERT INTO event_judges (event_id, judge_id, is_chairman, status, is_deleted) VALUES (?, ?, ?, 'Active', 0)");
             $insert->bind_param("iii", $event_id, $judge_id, $is_chairman);
             $insert->execute();
-            $msg = $msg_prefix . "added to event list.";
+            $msg = $msg_prefix . "added to event.";
         }
 
-        // *** CRITICAL STEP: SAVE TO DATABASE NOW ***
-        // This ensures the Judge is saved even if the email fails later.
         $conn->commit();
 
-    } catch (Exception $e) {
-        $conn->rollback();
-        header("Location: ../public/judges.php?error=Database Error: " . $e->getMessage());
-        exit();
-    }
-
-    // --- STEP B: EMAIL NOTIFICATION ---
-    // The Judge is already saved. We try to email, but we won't wait/check for internet first.
-    
-    try {
-        // REMOVED: if (!hasInternetConnection()) ... (This removes the 3-second delay)
-
-        require_once __DIR__ . '/../app/core/CustomMailer.php';
-        
+        // Email Notification
         $site_link = "https://juvenal-esteban-octavalent.ngrok-free.dev/bpms_v2/public/index.php"; 
         $evt_name = "the Pageant";
-        
         $e_query = $conn->query("SELECT title FROM events WHERE id = $event_id");
-        if ($row = $e_query->fetch_assoc()) {
-            $evt_name = $row['title'];
-        }
+        if ($row = $e_query->fetch_assoc()) { $evt_name = $row['title']; }
 
         $subject = "Official Invitation: Judge for $evt_name";
-        $body = "
-            <h2>Hello, $name!</h2>
-            <p>You have been assigned as a Judge for <b>$evt_name</b>.</p>
-            <div style='background:#f3f4f6; padding:15px; border-radius:8px; margin:20px 0;'>
-                <strong>Your Login Credentials:</strong><br>
-                Email: <b>$email</b><br>
-                Password: <b>$pass</b>
-            </div>
-            <p><a href='$site_link' style='background:#F59E0B; color:white; padding:10px 20px; text-decoration:none;'>Login Now</a></p>
-        ";
+        $body = "<h2>Hello, $name!</h2><p>You have been assigned as a Judge.</p>
+                 <div style='background:#f3f4f6; padding:15px;'><strong>Credentials:</strong><br>Email: <b>$email</b><br>Password: <b>$pass</b></div>
+                 <p><a href='$site_link'>Login Now</a></p>";
 
-        // This will try to send. If no SMTP is set up, it might fail instantly or log an error.
         queueEmail($email, $subject, $body);
-
         header("Location: ../public/judges.php?success=" . urlencode($msg));
 
     } catch (Exception $e) {
-        // If email fails, we just warn the user.
-        $warningMsg = "Judge saved successfully. (Email notification could not be sent: " . $e->getMessage() . ")";
-        header("Location: ../public/judges.php?warning=" . urlencode($warningMsg));
+        $conn->rollback();
+        header("Location: ../public/judges.php?error=Error: " . $e->getMessage());
     }
     exit();
 }
 
-// --- 2. UPDATE JUDGE (Edit details) ---
+// --- 2. UPDATE JUDGE ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update') {
-    // (Existing Update Logic - No changes needed here, just kept for completeness)
     $link_id  = (int)$_POST['link_id'];
     $name     = trim($_POST['name']);
     $email    = trim($_POST['email']);
@@ -175,9 +137,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
     $conn->begin_transaction();
     try {
-        if ($is_chairman) {
-            resetChairman($conn, $event_id);
-        }
+        if ($is_chairman) resetChairman($conn, $event_id);
+        
         $stmt1 = $conn->prepare("UPDATE event_judges SET is_chairman = ? WHERE id = ?");
         $stmt1->bind_param("ii", $is_chairman, $link_id);
         $stmt1->execute();
@@ -191,6 +152,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $stmt2->bind_param("ssi", $name, $email, $judge_id);
         }
         $stmt2->execute();
+        
         $conn->commit();
         header("Location: ../public/judges.php?success=Judge updated successfully");
 
@@ -201,49 +163,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     exit();
 }
 
-// --- 3. REMOVE / RESTORE / DELETE (FIXED) ---
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && isset($_POST['id'])) {
+// --- 3. REMOVE / RESTORE / DELETE ---
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && isset($_POST['id']) && $_POST['action'] !== 'unlock_scorecard') {
     $link_id = (int)$_POST['id'];
     $action  = $_POST['action'];
 
     $conn->begin_transaction();
     try {
-        // 1. FETCH USER ID (Needed to update the 'users' table)
         $q = $conn->query("SELECT judge_id FROM event_judges WHERE id = $link_id");
-        if ($q->num_rows === 0) {
-             throw new Exception("Judge not found in event list");
-        }
+        if ($q->num_rows === 0) throw new Exception("Judge not found");
         $target_user_id = $q->fetch_assoc()['judge_id'];
 
         if ($action === 'delete') {
-            // Update Link
             $conn->query("UPDATE event_judges SET is_deleted = 1 WHERE id = $link_id");
-            
-            // SYNC: Disable User Login
             $conn->query("UPDATE users SET status = 'Inactive' WHERE id = $target_user_id");
-
-            $view = 'archived';
-            $msg = "Judge permanently removed from list.";
-
+            $view = 'archived'; $msg = "Judge removed.";
         } elseif ($action === 'restore') {
-            // Update Link
             $conn->query("UPDATE event_judges SET status = 'Active', is_deleted = 0 WHERE id = $link_id");
-            
-            // SYNC: Re-enable User Login
             $conn->query("UPDATE users SET status = 'Active' WHERE id = $target_user_id");
-
-            $view = 'archived';
-            $msg = "Judge restored successfully.";
-
+            $view = 'archived'; $msg = "Judge restored.";
         } else {
-            // Archive
             $conn->query("UPDATE event_judges SET status = 'Inactive' WHERE id = $link_id");
-
-            // SYNC: Disable User Login
             $conn->query("UPDATE users SET status = 'Inactive' WHERE id = $target_user_id");
-
-            $view = 'active';
-            $msg = "Judge archived.";
+            $view = 'active'; $msg = "Judge archived.";
         }
         
         $conn->commit();
@@ -251,6 +193,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && isset($_
 
     } catch (Exception $e) {
         $conn->rollback();
+        header("Location: ../public/judges.php?error=" . urlencode($e->getMessage()));
+    }
+    exit();
+}
+
+// --- 4. UNLOCK SCORECARD (THIS SECTION WAS MISSING) ---
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'unlock_scorecard') {
+    $judge_id = (int)$_POST['judge_id'];
+    $round_id = (int)$_POST['round_id'];
+
+    if (!$judge_id || !$round_id) {
+        header("Location: ../public/judges.php?error=Invalid Parameters");
+        exit();
+    }
+
+    try {
+        // Unlock by resetting status to Pending AND setting unlocked_at to NOW()
+        $stmt = $conn->prepare("UPDATE judge_round_status 
+                                SET status = 'Pending', unlocked_at = NOW() 
+                                WHERE round_id = ? AND judge_id = ?");
+        $stmt->bind_param("ii", $round_id, $judge_id);
+        $stmt->execute();
+
+        if ($stmt->affected_rows > 0) {
+            header("Location: ../public/judges.php?success=Scorecard Unlocked");
+        } else {
+            header("Location: ../public/judges.php?error=Could not unlock (Maybe it wasn't submitted?)");
+        }
+    } catch (Exception $e) {
         header("Location: ../public/judges.php?error=" . urlencode($e->getMessage()));
     }
     exit();

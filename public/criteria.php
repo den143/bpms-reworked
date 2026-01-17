@@ -252,7 +252,7 @@ if ($active_event) {
                 
                 <div class="form-group"><label>Title</label><input type="text" name="title" placeholder="e.g. Coordination" id="crit_title" class="form-control" required></div>
                 <div class="form-group"><label>Description</label><input type="text" name="description" placeholder="e.g. Precision and harmony of movements" id="crit_desc" class="form-control"></div>
-                <div class="form-group"><label>Max Score</label><input type="number" placeholder="e.g. 50" step="0.01" min="0.01" name="max_score" id="crit_max" class="form-control"></div>
+                <div class="form-group"><label>Max Score</label><input type="number" placeholder="e.g. 50" step="0.01" min="0.01" name="max_score" id="crit_max" class="form-control" required></div>
                 <div class="form-group"><label>Order</label><input type="number" name="ordering" id="crit_order" class="form-control" value="1"></div>
                 
                 <div style="text-align:right;">
