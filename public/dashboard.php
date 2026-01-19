@@ -12,25 +12,29 @@ $event_query->bind_param("i", $manager_id);
 $event_query->execute();
 $event_result = $event_query->get_result();
 
-$active_event = $event_result->fetch_assoc();
+// ROBUSTNESS FIX: Check if an array was actually fetched
+$active_event = $event_result->fetch_assoc(); 
+
+// We rely on $active_event being not null, rather than ID being > 0
+// This prevents the "ID 0" bug from hiding the dashboard.
 $event_id = $active_event['id'] ?? null;
 $event_title = $active_event['title'] ?? "No Active Event";
 $event_venue = $active_event['venue'] ?? "No Venue Selected";
 
-// DATE FORMATTING (Fix: June 20, 2026)
+// DATE FORMATTING
 $raw_date = $active_event['event_date'] ?? null;
 $event_date_str = "TBA";
 if ($raw_date) {
     $event_date_str = date("F d, Y", strtotime($raw_date));
 }
 
-// 2. FETCH REAL COUNTS
+// 2. FETCH REAL COUNTS (Only if event exists)
 $count_contestants = 0;
 $count_judges = 0;
 $count_rounds = 0;
 $count_criteria = 0;
 
-if ($event_id) {
+if (!empty($active_event)) {
     // Count Contestants
     $c_stmt = $conn->prepare("SELECT COUNT(*) as total FROM event_contestants WHERE event_id = ? AND is_deleted = 0");
     $c_stmt->bind_param("i", $event_id);
@@ -49,8 +53,7 @@ if ($event_id) {
     $r_stmt->execute();
     $count_rounds = $r_stmt->get_result()->fetch_assoc()['total'];
 
-    // Count Criteria (To verify if Segments/Criteria are set up)
-    // We join rounds -> segments -> criteria to get the total count for this event
+    // Count Criteria
     $crit_sql = "
         SELECT COUNT(c.id) as total 
         FROM criteria c
@@ -76,7 +79,7 @@ unset($_SESSION['success'], $_SESSION['error']);
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard - <?= htmlspecialchars($event_title) ?></title>
-    <link rel="stylesheet" href="./assets/css/style.css?v=2">
+    <link rel="stylesheet" href="./assets/css/style.css?v=3">
     <link rel="stylesheet" href="./assets/fontawesome/css/all.min.css">
     
     <style>
@@ -115,11 +118,50 @@ unset($_SESSION['success'], $_SESSION['error']);
         .btn-quick.secondary { background-color: #f3f4f6; color: #374151; }
         .btn-quick.secondary:hover { background-color: #e5e7eb; color: #111827; transform: translateX(5px); }
 
-        /* Modal */
-        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: none; justify-content: center; align-items: center; z-index: 1000; }
-        .modal-content { background: white; padding: 25px; width: 400px; border-radius: 8px; text-align: center; }
-        .modal-content input { width: 90%; margin: 10px 0; padding: 10px; border:1px solid #ddd; }
-        .btn-create { background-color: #28a745; color: white; border: none; padding: 10px; width: 100%; cursor: pointer; }
+        /* IMPROVED MODAL DESIGN */
+        .modal-overlay { 
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            background: rgba(17, 24, 39, 0.85); /* Darker backdrop */
+            backdrop-filter: blur(4px);
+            display: none; justify-content: center; align-items: center; 
+            z-index: 2000; 
+        }
+        .modal-content { 
+            background: white; 
+            padding: 40px; 
+            width: 100%; 
+            max-width: 480px; 
+            border-radius: 16px; 
+            text-align: left;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+            animation: modalPop 0.3s ease-out;
+        }
+
+        @keyframes modalPop {
+            from { transform: scale(0.95); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+
+        .modal-header { text-align: center; margin-bottom: 25px; }
+        .modal-icon { 
+            width: 70px; height: 70px; 
+            background: #FFFBEB; color: #F59E0B; 
+            border-radius: 50%; margin: 0 auto 15px; 
+            display: flex; align-items: center; justify-content: center; 
+            font-size: 30px; 
+        }
+        
+        .form-group label { display: block; margin-bottom: 8px; font-weight: 600; color: #374151; font-size: 14px; }
+        .form-control { width: 100%; padding: 12px; border: 1px solid #D1D5DB; border-radius: 8px; font-size: 14px; margin-bottom: 20px; }
+        .form-control:focus { border-color: #F59E0B; outline: none; box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2); }
+        
+        .btn-create-event { 
+            background: #F59E0B; color: white; width: 100%; 
+            padding: 14px; border: none; border-radius: 8px; 
+            font-weight: bold; font-size: 16px; cursor: pointer; 
+            transition: background 0.2s; display: flex; align-items: center; justify-content: center; gap: 10px;
+        }
+        .btn-create-event:hover { background: #D97706; }
 
         @media (max-width: 900px) { .dashboard-grid { grid-template-columns: 1fr; } }
     </style>
@@ -130,34 +172,8 @@ unset($_SESSION['success'], $_SESSION['error']);
 
     <div class="main-wrapper">
         
-        <div class="sidebar" style="display: flex; flex-direction: column;">
-            <div class="sidebar-header">
-                <img src="assets/images/BPMS_logo.png" alt="BPMS Logo" class="sidebar-logo">
-                <div class="brand-text">
-                    <div class="brand-name">BPMS</div>
-                    <div class="brand-subtitle">Event Manager</div>
-                </div>
-            </div>
-            <ul class="sidebar-menu">
-                <li><a href="dashboard.php" class="active"><i class="fas fa-chart-pie"></i> <span>Dashboard</span></a></li>
-                <li><a href="organizers.php"><i class="fas fa-user-tie"></i> <span>Manage Organizers</span></a></li>
-                <li><a href="contestants.php"><i class="fas fa-female"></i> <span>Register Contestants</span></a></li>
-                <li><a href="judges.php"><i class="fas fa-gavel"></i> <span>Manage Judges</span></a></li>
-                <li><a href="rounds.php"><i class="fas fa-layer-group"></i> <span>Manage Rounds</span></a></li>
-                <li><a href="criteria.php"><i class="fas fa-list-alt"></i> <span>Segments & Criteria</span></a></li>
-                <li><a href="activities.php"><i class="fas fa-calendar-check"></i> <span>Manage Activities</span></a></li>
-                <li><a href="awards.php"><i class="fas fa-trophy"></i> <span>Manage Awards</span></a></li>
-                <li><a href="tabulator.php"><i class="fas fa-print"></i> <span>Tabulation & Reports</span></a></li>
-            </ul>
-            <div class="sidebar-footer">
-                <a href="settings.php" style="display: flex; align-items: center; margin-bottom: 15px; text-decoration: none; color: #cbd5e1;">
-                    <i class="fas fa-cog" style="width: 25px;"></i> <span>Settings</span>
-                </a>
-                <a href="logout.php" onclick="return confirm('Logout?');" style="display: flex; align-items: center; color: #ef4444; text-decoration: none;">
-                    <i class="fas fa-sign-out-alt" style="width: 25px;"></i> <span>Logout</span>
-                </a>
-            </div>
-        </div>
+        <?php include '../app/views/partials/sidebar.php'; ?>
+        
         <div class="content-area">
             
             <div class="navbar">
@@ -278,7 +294,8 @@ unset($_SESSION['success'], $_SESSION['error']);
 
                     <div class="card-section">
                         <div class="card-title">Quick Actions</div>
-                        <?php if($event_id): ?>
+                        
+                        <?php if(!empty($active_event)): ?>
                             <div class="quick-actions-list">
                                 
                                 <a href="live_screen.php" target="_blank" class="btn-quick primary">
@@ -300,9 +317,9 @@ unset($_SESSION['success'], $_SESSION['error']);
                                 </a>
                             </div>
                         <?php else: ?>
-                            <p style="color: #6b7280; font-size: 14px;">Create an event to unlock actions.</p>
+                            <p style="color: #6b7280; font-size: 14px; margin-bottom: 15px;">Create an event to unlock actions.</p>
                             <button onclick="document.getElementById('createEventModal').style.display='flex'" class="btn-quick primary" style="justify-content:center;">
-                                Create Event Now
+                                <i class="fas fa-plus-circle"></i> Create Event Now
                             </button>
                         <?php endif; ?>
                     </div>
@@ -313,16 +330,36 @@ unset($_SESSION['success'], $_SESSION['error']);
         </div>
     </div>
 
-    <?php if (!$event_id): ?>
+    <?php if (empty($active_event)): ?>
     <div id="createEventModal" class="modal-overlay" style="display:flex;">
         <div class="modal-content">
-            <h2>Create New Event</h2>
-            <p>Please setup your event details to proceed.</p>
+            <div class="modal-header">
+                <div class="modal-icon">
+                    <i class="fas fa-calendar-plus"></i>
+                </div>
+                <h2 style="font-size: 24px; color: #111827; margin-bottom: 5px;">Welcome to BPMS</h2>
+                <p style="color: #6B7280; font-size: 15px;">Let's get started by creating your first event.</p>
+            </div>
+            
             <form action="../api/event.php" method="POST">
-                <input type="text" name="title" placeholder="Event Name (e.g., Miss Universe 2025)" required>
-                <input type="date" name="event_date" required>
-                <input type="text" name="venue" placeholder="Venue" required>
-                <button type="submit" class="btn-create">Create Event</button>
+                <div class="form-group">
+                    <label>Event Name</label>
+                    <input type="text" name="title" class="form-control" placeholder="e.g., Miss Universe 2026" required autofocus>
+                </div>
+                
+                <div class="form-group">
+                    <label>Event Date</label>
+                    <input type="date" name="event_date" class="form-control" required>
+                </div>
+                
+                <div class="form-group">
+                    <label>Venue</label>
+                    <input type="text" name="venue" class="form-control" placeholder="e.g., City Coliseum" required>
+                </div>
+                
+                <button type="submit" class="btn-create-event">
+                    <i class="fas fa-magic"></i> Create Event & Start
+                </button>
             </form>
         </div>
     </div>
