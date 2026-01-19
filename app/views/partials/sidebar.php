@@ -46,29 +46,46 @@ $current_page = basename($_SERVER['PHP_SELF']);
     </ul>
     
     <div class="sidebar-footer" style="flex-shrink: 0; padding: 20px; border-top: 1px solid rgba(255,255,255,0.1);">
-        <?php if ($role === 'Event Manager'): ?>
-            <a href="settings.php" class="<?= $current_page == 'settings.php' ? 'active' : '' ?>" style="display: flex; align-items: center; margin-bottom: 15px; text-decoration: none;">
-                <i class="fas fa-cog" style="width: 25px;"></i> <span>Settings</span>
-            </a>
-        <?php endif; ?>
-        
-        <a href="logout.php" onclick="return confirm('Are you sure you want to logout?');" style="display: flex; align-items: center; color: #ef4444; text-decoration: none;">
-            <i class="fas fa-sign-out-alt" style="width: 25px;"></i> <span>Logout</span>
+    <?php if ($role === 'Event Manager'): ?>
+        <a href="settings.php" class="<?= $current_page == 'settings.php' ? 'active' : '' ?>" style="display: flex; align-items: center; margin-bottom: 15px; text-decoration: none;">
+            <i class="fas fa-cog" style="width: 25px;"></i> <span>Settings</span>
         </a>
-    </div>
+    <?php endif; ?>
+    
+    <a href="logout.php" onclick="return confirm('Are you sure you want to logout?');" style="display: flex; align-items: center; color: #ef4444; text-decoration: none;">
+        <i class="fas fa-sign-out-alt" style="width: 25px;"></i> <span>Logout</span>
+    </a>
+</div>
 </div>
 
+<?php if ($role === 'Event Manager'): ?>
 <script>
-    function processQueue() {
-        // Calls the worker script silently in the background
-        fetch('../api/process_emails.php')
-            .then(response => console.log("Email Queue Processed"))
-            .catch(error => console.error("Queue Error", error));
+    function smartEmailQueue() {
+        const cooldown = 60000; // 60 seconds allowed between checks
+        const lastRun = localStorage.getItem('bpms_last_email_run');
+        const now = Date.now();
+
+        // Check if enough time has passed since the last run
+        if (!lastRun || (now - lastRun) > cooldown) {
+            
+            // 1. Update timestamp immediately so subsequent calls (from fast clicking) get blocked
+            localStorage.setItem('bpms_last_email_run', now);
+
+            // 2. Run the Fetch
+            console.log("System: Processing Email Queue...");
+            fetch('../api/process_emails.php')
+                .then(res => res.text())
+                .then(data => console.log("Queue Result:", data))
+                .catch(err => console.error("Queue Skipped (Network/Busy)"));
+        } else {
+            console.log("System: Email Queue on Cooldown");
+        }
     }
 
-    // Run immediately when page loads
-    processQueue();
+    // Attempt to run on every page load (but the cooldown will block 99% of them)
+    smartEmailQueue();
 
-    // Optionally run every 30 seconds to catch new emails if you stay on the same page
-    setInterval(processQueue, 60000); 
+    // Also try every 60 seconds while staying on the same page
+    setInterval(smartEmailQueue, 60000);
 </script>
+<?php endif; ?>

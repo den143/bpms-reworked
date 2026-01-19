@@ -72,7 +72,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'clear_unused') {
     $event_id = (int)$_POST['event_id'];
     
-    // Safety: Only delete 'Unused'. Never delete 'Used' tickets to preserve voting history.
     $conn->query("DELETE FROM tickets WHERE event_id = $event_id AND status = 'Unused'");
     header("Location: ../public/settings.php?success=All unused tickets deleted.");
     exit();
