@@ -4,6 +4,14 @@ requireLogin();
 requireRole('Event Manager');
 require_once __DIR__ . '/../app/config/database.php';
 
+// --- SECURITY HEADERS ---
+// Prevent the browser from caching this page. 
+// This ensures that if you Logout and click "Back", the browser is forced to reload
+// (which triggers the login check and redirects you safely).
+header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
+header("Cache-Control: post-check=0, pre-check=0", false);
+header("Pragma: no-cache");
+
 // 1. Fetch Active Event for this Manager
 $manager_id = $_SESSION['user_id'];
 
@@ -36,7 +44,13 @@ $count_criteria = 0;
 
 if (!empty($active_event)) {
     // Count Contestants
-    $c_stmt = $conn->prepare("SELECT COUNT(*) as total FROM event_contestants WHERE event_id = ? AND is_deleted = 0");
+    $c_stmt = $conn->prepare("
+        SELECT COUNT(*) as total 
+        FROM event_contestants 
+        WHERE event_id = ? 
+        AND status IN ('Active', 'Qualified', 'Eliminated') 
+        AND is_deleted = 0
+    ");
     $c_stmt->bind_param("i", $event_id);
     $c_stmt->execute();
     $count_contestants = $c_stmt->get_result()->fetch_assoc()['total'];
@@ -361,6 +375,13 @@ unset($_SESSION['success'], $_SESSION['error']);
                     <i class="fas fa-magic"></i> Create Event & Start
                 </button>
             </form>
+
+            <div style="margin-top: 20px; text-align: center; border-top: 1px solid #f3f4f6; padding-top: 15px;">
+                <p style="font-size: 13px; color: #9ca3af; margin-bottom: 10px;">Not ready to start?</p>
+                <a href="logout.php" onclick="return confirm('Are you sure you want to logout?');" style="color: #EF4444; text-decoration: none; font-size: 14px; font-weight: 600; display: inline-flex; align-items: center; gap: 5px;">
+                    <i class="fas fa-sign-out-alt"></i> Cancel & Logout
+                </a>
+            </div>
         </div>
     </div>
     <?php endif; ?>
