@@ -19,12 +19,20 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'active';
 if ($active_event) {
     $event_id = $active_event['id'];
     
-    // FETCH ACTIVE
-    $sql = "SELECT * FROM event_activities WHERE event_id = $event_id AND is_deleted = 0 ORDER BY activity_date ASC, start_time ASC";
+    // FETCH ACTIVE (Status is 'Active' and NOT deleted)
+    $sql = "SELECT * FROM event_activities 
+            WHERE event_id = $event_id 
+            AND status = 'Active' 
+            AND is_deleted = 0 
+            ORDER BY activity_date ASC, start_time ASC";
     $activities = $conn->query($sql)->fetch_all(MYSQLI_ASSOC);
 
-    // FETCH ARCHIVED
-    $sql_arc = "SELECT * FROM event_activities WHERE event_id = $event_id AND is_deleted = 1 ORDER BY activity_date DESC";
+    // FETCH ARCHIVED (Status is 'Inactive' and NOT deleted)
+    $sql_arc = "SELECT * FROM event_activities 
+                WHERE event_id = $event_id 
+                AND status = 'Inactive' 
+                AND is_deleted = 0 
+                ORDER BY activity_date DESC";
     $archived = $conn->query($sql_arc)->fetch_all(MYSQLI_ASSOC);
 }
 

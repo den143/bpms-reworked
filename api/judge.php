@@ -93,7 +93,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $conn->commit();
 
         // Email Notification
-        $site_link = "https://juvenal-esteban-octavalent.ngrok-free.dev/bpms_v2/public/index.php"; 
+        // Note: Update this link to your actual domain when deploying
+        $site_link = "http://" . $_SERVER['HTTP_HOST'] . "/bpms_v2/public/index.php"; 
         $evt_name = "the Pageant";
         $e_query = $conn->query("SELECT title FROM events WHERE id = $event_id");
         if ($row = $e_query->fetch_assoc()) { $evt_name = $row['title']; }
@@ -163,7 +164,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     exit();
 }
 
-// --- 3. REMOVE / RESTORE / DELETE ---
+// --- 3. REMOVE / RESTORE / DELETE (FIXED) ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && isset($_POST['id']) && $_POST['action'] !== 'unlock_scorecard') {
     $link_id = (int)$_POST['id'];
     $action  = $_POST['action'];
@@ -175,16 +176,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && isset($_
         $target_user_id = $q->fetch_assoc()['judge_id'];
 
         if ($action === 'delete') {
+            // FIX: Soft Delete BOTH tables and set is_deleted = 1
             $conn->query("UPDATE event_judges SET is_deleted = 1 WHERE id = $link_id");
-            $conn->query("UPDATE users SET status = 'Inactive' WHERE id = $target_user_id");
-            $view = 'archived'; $msg = "Judge removed.";
+            $conn->query("UPDATE users SET status = 'Inactive', is_deleted = 1 WHERE id = $target_user_id");
+            
+            $view = 'archived'; $msg = "Judge removed permanently.";
+
         } elseif ($action === 'restore') {
+            // FIX: Restore BOTH tables and set is_deleted = 0
             $conn->query("UPDATE event_judges SET status = 'Active', is_deleted = 0 WHERE id = $link_id");
-            $conn->query("UPDATE users SET status = 'Active' WHERE id = $target_user_id");
+            $conn->query("UPDATE users SET status = 'Active', is_deleted = 0 WHERE id = $target_user_id");
+            
             $view = 'archived'; $msg = "Judge restored.";
+
         } else {
+            // Archive (Temporary) - Just status inactive, do not delete user account
             $conn->query("UPDATE event_judges SET status = 'Inactive' WHERE id = $link_id");
             $conn->query("UPDATE users SET status = 'Inactive' WHERE id = $target_user_id");
+            
             $view = 'active'; $msg = "Judge archived.";
         }
         
@@ -198,7 +207,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && isset($_
     exit();
 }
 
-// --- 4. UNLOCK SCORECARD (THIS SECTION WAS MISSING) ---
+// --- 4. UNLOCK SCORECARD ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'unlock_scorecard') {
     $judge_id = (int)$_POST['judge_id'];
     $round_id = (int)$_POST['round_id'];

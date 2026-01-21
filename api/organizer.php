@@ -8,8 +8,6 @@ requireRole('Event Manager');
 require_once __DIR__ . '/../app/config/database.php';
 
 // ACTION 1: ADD or RESTORE ORGANIZER
-// Purpose: Assign a staff member to the event. 
-// Logic: If user exists, CHECK ROLE MATCH, then UPDATE details; otherwise CREATE new.
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'create') {
     
     $event_id = (int)$_POST['event_id'];
@@ -45,7 +43,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 throw new Exception("Security Alert: You cannot assign the Event Manager account as an Organizer.");
             }
 
-            // 2. LOGIC: PREVENT ROLE CHANGE (The Fix)
+            // 2. LOGIC: PREVENT ROLE CHANGE (Strict check for creation to avoid confusion)
             if ($existingUser['role'] !== $role) {
                 throw new Exception("This email is already registered as a '" . $existingUser['role'] . "'. You cannot change their role to '$role'. Please use a different email or select the correct role.");
             }
@@ -53,7 +51,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $user_id = $existingUser['id'];
             
             // Logic: Update Name, Phone, Password. 
-            // REMOVED 'role' from update to ensure identity is preserved.
             $hashed_pass = password_hash($pass, PASSWORD_DEFAULT);
             $updateStmt = $conn->prepare("UPDATE users SET name=?, phone=?, password=?, status='Active' WHERE id=?");
             $updateStmt->bind_param("sssi", $name, $phone, $hashed_pass, $user_id);
@@ -98,7 +95,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
         // Step 3: Send Email Notification
         require_once __DIR__ . '/../app/core/CustomMailer.php';
-        $site_link = "https://juvenal-esteban-octavalent.ngrok-free.dev/bpms_v2/public/index.php"; 
+        // Note: Update this link to your LIVE URL when deploying
+        $site_link = "http://" . $_SERVER['HTTP_HOST'] . "/bpms_v2/public/index.php"; 
 
         $evt_name = "the Event";
         $e_query = $conn->query("SELECT title FROM events WHERE id = $event_id");
@@ -142,29 +140,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 // ACTION 2: UPDATE ORGANIZER (Edit via Edit Button)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update') {
     
-    $user_id = (int)$_POST['org_id']; 
-    $name  = trim($_POST['name']);
-    $email = trim($_POST['email']);
-    $phone = trim($_POST['phone']);
-    $role  = trim($_POST['role']);
-    $pass  = trim($_POST['password']);
+    $incoming_id = (int)$_POST['org_id']; 
 
     $conn->begin_transaction();
     try {
-        // 1. GET CURRENT ROLE
-        $checkRole = $conn->query("SELECT role FROM users WHERE id = $user_id");
-        $existing = $checkRole->fetch_assoc();
-        
+        // 1. Resolve the Real User ID
+        // The form sends 'event_teams.id', we need 'users.id'
+        $linkCheck = $conn->query("SELECT user_id FROM event_teams WHERE id = $incoming_id");
+        if ($linkCheck->num_rows > 0) {
+            $user_id = $linkCheck->fetch_assoc()['user_id'];
+        } else {
+            $user_id = $incoming_id; // Fallback
+        }
+
+        $name  = trim($_POST['name']);
+        $email = trim($_POST['email']);
+        $phone = trim($_POST['phone']);
+        $role  = trim($_POST['role']); // This is the NEW role
+        $pass  = trim($_POST['password']);
+
+        // 2. Validate the New Role
+        $allowed_roles = ['Judge Coordinator', 'Contestant Manager', 'Tabulator'];
+        if (!in_array($role, $allowed_roles)) {
+            throw new Exception("Invalid Role selected.");
+        }
+
+        // 3. Security Checks
+        $checkUser = $conn->query("SELECT role FROM users WHERE id = $user_id");
+        if ($checkUser->num_rows === 0) throw new Exception("User not found.");
+        $existing = $checkUser->fetch_assoc();
+
         if ($existing['role'] === 'Event Manager') {
-             throw new Exception("Cannot edit Event Manager accounts here.");
+             throw new Exception("Cannot edit Event Manager accounts.");
         }
 
-        // 2. CHECK ROLE CONSISTENCY (If editing role)
-        if ($existing['role'] !== $role) {
-             throw new Exception("Cannot change role. This user is registered as '" . $existing['role'] . "'.");
-        }
-
-        // Duplicate Email Check
+        // 4. Duplicate Email Check
         $dupCheck = $conn->prepare("SELECT id FROM users WHERE email = ? AND id != ?");
         $dupCheck->bind_param("si", $email, $user_id);
         $dupCheck->execute();
@@ -172,24 +182,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             throw new Exception("This email is already used by another account.");
         }
 
-        // Update User Profile (EXCLUDING ROLE)
+        // 5. UPDATE USER TABLE (Include Role!)
         if (!empty($pass)) {
             $hashed_pass = password_hash($pass, PASSWORD_DEFAULT);
-            $stmt = $conn->prepare("UPDATE users SET name=?, email=?, phone=?, password=? WHERE id=?");
-            $stmt->bind_param("ssssi", $name, $email, $phone, $hashed_pass, $user_id);
+            $stmt = $conn->prepare("UPDATE users SET name=?, email=?, phone=?, role=?, password=? WHERE id=?");
+            $stmt->bind_param("sssssi", $name, $email, $phone, $role, $hashed_pass, $user_id);
         } else {
-            $stmt = $conn->prepare("UPDATE users SET name=?, email=?, phone=? WHERE id=?");
-            $stmt->bind_param("sssi", $name, $email, $phone, $user_id);
+            $stmt = $conn->prepare("UPDATE users SET name=?, email=?, phone=?, role=? WHERE id=?");
+            $stmt->bind_param("ssssi", $name, $email, $phone, $role, $user_id);
         }
         $stmt->execute();
 
-        // SYNC: Update Role in Event Teams
+        // 6. UPDATE EVENT TEAMS TABLE
+        // We must ensure the link reflects the new role too
         $stmt2 = $conn->prepare("UPDATE event_teams SET role=? WHERE user_id=?");
         $stmt2->bind_param("si", $role, $user_id);
         $stmt2->execute();
 
         $conn->commit();
-        header("Location: ../public/organizers.php?success=Organizer updated");
+        header("Location: ../public/organizers.php?success=Organizer details and role updated");
 
     } catch (Exception $e) {
         $conn->rollback();
@@ -212,20 +223,30 @@ if (isset($_GET['action']) && isset($_GET['id'])) {
         $target_user_id = $q->fetch_assoc()['user_id'];
 
         if ($type === 'delete') {
+            // FIX: Soft Delete BOTH tables
+            // 1. Mark the link as deleted
             $conn->query("UPDATE event_teams SET is_deleted = 1 WHERE id = $link_id");
-            $conn->query("UPDATE users SET status = 'Inactive' WHERE id = $target_user_id");
+            // 2. Mark the USER as deleted and inactive (Added is_deleted = 1 here)
+            $conn->query("UPDATE users SET status = 'Inactive', is_deleted = 1 WHERE id = $target_user_id");
+            
             $redirect_view = 'archived'; 
             $msg = "Organizer removed permanently.";
 
         } elseif ($type === 'restore') {
+            // FIX: Restore BOTH tables
             $conn->query("UPDATE event_teams SET status = 'Active', is_deleted = 0 WHERE id = $link_id");
-            $conn->query("UPDATE users SET status = 'Active' WHERE id = $target_user_id");
+            // Added is_deleted = 0 here to bring the user back fully
+            $conn->query("UPDATE users SET status = 'Active', is_deleted = 0 WHERE id = $target_user_id");
+            
             $redirect_view = 'archived'; 
             $msg = "Organizer restored successfully.";
 
         } else {
+            // Archive (Temporary Inactive)
             $conn->query("UPDATE event_teams SET status = 'Inactive' WHERE id = $link_id");
+            // Just set status to Inactive, do NOT delete the user account
             $conn->query("UPDATE users SET status = 'Inactive' WHERE id = $target_user_id");
+            
             $redirect_view = 'active'; 
             $msg = "Organizer moved to archive.";
         }

@@ -15,10 +15,12 @@ require_once __DIR__ . '/../app/config/database.php';
 
 // LOGIC: TIME OVERLAP CHECKER
 function checkOverlap($conn, $event_id, $date, $start, $end, $exclude_id = null) {
+    // Only check against non-deleted activities
     $sql = "SELECT title, start_time, end_time FROM event_activities 
             WHERE event_id = ? 
             AND activity_date = ? 
             AND is_deleted = 0 
+            AND status = 'Active'
             AND ((? < end_time) AND (? > start_time))";
     
     if ($exclude_id) {
@@ -60,7 +62,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         }
     }
 
-    $stmt = $conn->prepare("INSERT INTO event_activities (event_id, title, venue, activity_date, start_time, end_time, description) VALUES (?, ?, ?, ?, ?, ?, ?)");
+    // Default status is 'Active' and is_deleted is 0
+    $stmt = $conn->prepare("INSERT INTO event_activities (event_id, title, venue, activity_date, start_time, end_time, description, status, is_deleted) VALUES (?, ?, ?, ?, ?, ?, ?, 'Active', 0)");
     $stmt->bind_param("issssss", $event_id, $title, $venue, $date, $start, $end, $desc);
     
     if ($stmt->execute()) {
@@ -110,28 +113,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     exit();
 }
 
-// ACTION 3: SOFT DELETE (ARCHIVE)
+// ACTION 3: ARCHIVE (Set Status = Inactive, Keep is_deleted = 0)
 if (isset($_GET['action']) && $_GET['action'] === 'archive') {
     $id = (int)$_GET['id'];
-    $conn->query("UPDATE event_activities SET is_deleted = 1 WHERE id = $id");
-    header("Location: ../public/activities.php?success=Activity archived");
+    // FIX: Only change status to Inactive. Do NOT set is_deleted to 1.
+    $conn->query("UPDATE event_activities SET status = 'Inactive' WHERE id = $id");
+    header("Location: ../public/activities.php?success=Activity moved to archive");
     exit();
 }
 
-// ACTION 4: RESTORE (UN-ARCHIVE) --> THIS WAS MISSING
+// ACTION 4: RESTORE (Set Status = Active)
 if (isset($_GET['action']) && $_GET['action'] === 'restore') {
     $id = (int)$_GET['id'];
-    // Update is_deleted back to 0
-    $conn->query("UPDATE event_activities SET is_deleted = 0 WHERE id = $id");
+    // FIX: Change status back to Active.
+    $conn->query("UPDATE event_activities SET status = 'Active' WHERE id = $id");
     header("Location: ../public/activities.php?view=archive&success=Activity restored successfully");
     exit();
 }
 
-// ACTION 5: PERMANENT DELETE
+// ACTION 5: DELETE (Set is_deleted = 1)
 if (isset($_GET['action']) && $_GET['action'] === 'delete') {
     $id = (int)$_GET['id'];
-    $conn->query("DELETE FROM event_activities WHERE id = $id");
-    header("Location: ../public/activities.php?view=archive&success=Activity deleted permanently");
+    // FIX: Soft Delete. Set is_deleted = 1.
+    $conn->query("UPDATE event_activities SET is_deleted = 1 WHERE id = $id");
+    header("Location: ../public/activities.php?view=archive&success=Activity removed permanently");
     exit();
 }
 ?>

@@ -19,8 +19,8 @@ function validateAdvancement($conn, $event_id, $current_order, $current_qualify_
     // If it's the first round, no previous limits apply
     if ($prev_order < 1) return true; 
 
-    // Fetch previous round info from 'rounds' table
-    $stmt = $conn->prepare("SELECT qualify_count, type, title FROM rounds WHERE event_id = ? AND ordering = ?");
+    // Fetch previous round info (FIX: IGNORE DELETED ROUNDS)
+    $stmt = $conn->prepare("SELECT qualify_count, type, title FROM rounds WHERE event_id = ? AND ordering = ? AND is_deleted = 0");
     $stmt->bind_param("ii", $event_id, $prev_order);
     $stmt->execute();
     $prev = $stmt->get_result()->fetch_assoc();
@@ -126,9 +126,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $check = validateAdvancement($conn, $event_id, $order, $qualify);
     if ($check !== true) { header("Location: ../public/rounds.php?error=" . urlencode($check)); exit(); }
 
-    // Duplicate Check
-    $dupCheck = $conn->query("SELECT id FROM rounds WHERE event_id = $event_id AND ordering = $order");
-    if ($dupCheck->num_rows > 0) { header("Location: ../public/rounds.php?error=Order #$order already exists."); exit(); }
+    // Duplicate Check (FIX: Ignore deleted rounds!)
+    $dupCheck = $conn->query("SELECT id FROM rounds WHERE event_id = $event_id AND ordering = $order AND is_deleted = 0");
+    if ($dupCheck->num_rows > 0) { 
+        header("Location: ../public/rounds.php?error=Order #$order already exists."); 
+        exit(); 
+    }
 
     // Matches 'rounds' table structure
     $stmt = $conn->prepare("INSERT INTO rounds (event_id, title, ordering, type, qualify_count, status) VALUES (?, ?, ?, ?, ?, 'Pending')");
@@ -161,6 +164,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $check = validateAdvancement($conn, $event_id, $order, $qualify);
     if ($check !== true) { header("Location: ../public/rounds.php?error=" . urlencode($check)); exit(); }
 
+    // Check for Duplicate Order (Excluding this round itself, and ignoring deleted ones)
+    $dupCheck = $conn->query("SELECT id FROM rounds WHERE event_id = $event_id AND ordering = $order AND id != $round_id AND is_deleted = 0");
+    if ($dupCheck->num_rows > 0) {
+        header("Location: ../public/rounds.php?error=Order #$order already exists."); exit();
+    }
+
     $stmt = $conn->prepare("UPDATE rounds SET title=?, ordering=?, type=?, qualify_count=? WHERE id=?");
     $stmt->bind_param("sisii", $title, $order, $type, $qualify, $round_id);
 
@@ -169,7 +178,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     exit();
 }
 
-// --- 3. DELETE ROUND (GET) ---
+// --- 3. DELETE ROUND (GET) [FIXED CASCADE + STATUS UPDATE] ---
 if (isset($_GET['action']) && $_GET['action'] === 'delete') {
     requireRole('Event Manager');
 
@@ -180,7 +189,6 @@ if (isset($_GET['action']) && $_GET['action'] === 'delete') {
     }
 
     // Safety: Don't delete if scores exist. 
-    // Scores link to Criteria -> Segments -> Round
     $scoreCheck = $conn->prepare("
         SELECT sc.id FROM scores sc
         JOIN criteria c ON sc.criteria_id = c.id
@@ -194,9 +202,24 @@ if (isset($_GET['action']) && $_GET['action'] === 'delete') {
         header("Location: ../public/rounds.php?error=Cannot delete: Scores exist."); exit();
     }
 
-    // We use soft delete based on DB structure
-    $conn->query("UPDATE rounds SET is_deleted = 1 WHERE id = $id");
-    header("Location: ../public/rounds.php?success=Round deleted");
+    // CASCADING SOFT DELETE
+    // 1. Delete Criteria linked to Segments of this Round
+    $stmt1 = $conn->prepare("UPDATE criteria c JOIN segments s ON c.segment_id = s.id SET c.is_deleted = 1 WHERE s.round_id = ?");
+    $stmt1->bind_param("i", $id);
+    $stmt1->execute();
+
+    // 2. Delete Segments linked to this Round
+    $stmt2 = $conn->prepare("UPDATE segments SET is_deleted = 1 WHERE round_id = ?");
+    $stmt2->bind_param("i", $id);
+    $stmt2->execute();
+
+    // 3. Delete the Round itself AND set status to Inactive
+    // [FIX] Added ", status = 'Inactive'" here
+    $stmt3 = $conn->prepare("UPDATE rounds SET is_deleted = 1, status = 'Inactive' WHERE id = ?");
+    $stmt3->bind_param("i", $id);
+    $stmt3->execute();
+
+    header("Location: ../public/rounds.php?success=Round deleted and set to Inactive");
     exit();
 }
 
@@ -215,7 +238,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $event_id = $r_query['event_id'];
         
         // RULE 1: CONCURRENCY CHECK (Single Thread)
-        $check_active = $conn->query("SELECT title FROM rounds WHERE event_id = $event_id AND status = 'Active' AND id != $round_id");
+        // IGNORE DELETED ROUNDS HERE TOO
+        $check_active = $conn->query("SELECT title FROM rounds WHERE event_id = $event_id AND status = 'Active' AND id != $round_id AND is_deleted = 0");
         if ($check_active->num_rows > 0) {
             $active = $check_active->fetch_assoc();
             throw new Exception("TRAFFIC JAM: Cannot start '{$r_query['title']}'. '{$active['title']}' is currently LIVE.");

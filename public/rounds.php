@@ -27,7 +27,6 @@ if ($active_event) {
     if (!empty($rounds)) {
         $last_round = end($rounds);
         $next_order = $last_round['ordering'] + 1;
-        // FIX: Use 'qualify_count' instead of 'contestants_to_advance'
         $previous_top_n = $last_round['qualify_count'];
     }
 }
@@ -115,11 +114,45 @@ if ($active_event) {
                                             <i class="fas fa-trash"></i>
                                         </a>
 
-                                    <?php elseif ($r['status'] === 'Active'): ?>
-                                        <button onclick="controlRound(<?= $r['id'] ?>, 'lock')" class="btn-control btn-lock">
-                                            <i class="fas fa-gavel"></i> LOCK
+                                    <?php elseif ($r['status'] === 'Active'): 
+                                        // --- NEW LOGIC: Calculate Judge Progress ---
+                                        
+                                        // 1. Count Active Judges (Exclude Deleted/Archived)
+                                        $j_tot_sql = "SELECT COUNT(*) as cnt FROM event_judges WHERE event_id = {$event_id} AND status = 'Active' AND is_deleted = 0";
+                                        $j_tot = $conn->query($j_tot_sql)->fetch_assoc()['cnt'];
+
+                                        // 2. Count Submitted Judges (Only count those who are still Active/Not Deleted)
+                                        // We join tables to ensure we don't count a deleted judge's old submission
+                                        $j_sub_sql = "SELECT COUNT(*) as cnt 
+                                                      FROM judge_round_status jrs 
+                                                      JOIN event_judges ej ON jrs.judge_id = ej.judge_id 
+                                                      WHERE jrs.round_id = {$r['id']} 
+                                                      AND jrs.status = 'Submitted' 
+                                                      AND ej.event_id = {$event_id} 
+                                                      AND ej.status = 'Active' 
+                                                      AND ej.is_deleted = 0";
+                                        $j_sub = $conn->query($j_sub_sql)->fetch_assoc()['cnt'];
+
+                                        // 3. Check for Scores (For Stop Button)
+                                        $s_chk_sql = "SELECT s.id FROM scores s JOIN criteria c ON s.criteria_id = c.id JOIN segments seg ON c.segment_id = seg.id WHERE seg.round_id = {$r['id']} LIMIT 1";
+                                        $has_scores = $conn->query($s_chk_sql)->num_rows > 0;
+
+                                        // 4. States
+                                        $can_lock = ($j_tot > 0 && $j_sub == $j_tot);
+                                        $can_stop = (!$has_scores);
+                                    ?>
+                                        <button onclick="controlRound(<?= $r['id'] ?>, 'lock')" 
+                                                class="btn-control btn-lock" 
+                                                style="<?= $can_lock ? '' : 'opacity: 0.6; cursor: not-allowed; background:#9ca3af;' ?>"
+                                                title="<?= $can_lock ? 'Ready to Lock' : 'Waiting for judges...' ?>">
+                                            <i class="fas fa-gavel"></i> 
+                                            LOCK (<?= $j_sub ?>/<?= $j_tot ?>)
                                         </button>
-                                        <button onclick="controlRound(<?= $r['id'] ?>, 'stop')" class="btn-control btn-stop" title="Emergency Stop">
+
+                                        <button onclick="controlRound(<?= $r['id'] ?>, 'stop')" 
+                                                class="btn-control btn-stop" 
+                                                style="<?= $can_stop ? '' : 'opacity: 0.6; cursor: not-allowed; background:#ef4444;' ?>"
+                                                title="<?= $can_stop ? 'Emergency Stop' : 'Cannot Stop: Scores exist' ?>">
                                             <i class="fas fa-stop"></i> STOP
                                         </button>
 

@@ -21,12 +21,20 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'active';
 if ($active_event) {
     $event_id = $active_event['id'];
 
-    // Fetch Awards (Active)
-    $sql = "SELECT * FROM awards WHERE event_id = $event_id AND is_deleted = 0 ORDER BY category_type ASC, title ASC";
+    // FIX: Fetch Active Awards (Status = Active AND Not Deleted)
+    $sql = "SELECT * FROM awards 
+            WHERE event_id = $event_id 
+            AND status = 'Active' 
+            AND is_deleted = 0 
+            ORDER BY category_type ASC, title ASC";
     $awards = $conn->query($sql)->fetch_all(MYSQLI_ASSOC);
 
-    // Fetch Awards (Archived)
-    $sql_arc = "SELECT * FROM awards WHERE event_id = $event_id AND is_deleted = 1 ORDER BY category_type ASC";
+    // FIX: Fetch Archived Awards (Status = Inactive AND Not Deleted)
+    $sql_arc = "SELECT * FROM awards 
+                WHERE event_id = $event_id 
+                AND status = 'Inactive' 
+                AND is_deleted = 0 
+                ORDER BY category_type ASC";
     $archived = $conn->query($sql_arc)->fetch_all(MYSQLI_ASSOC);
 
     // Fetch Segments (For Dropdown)
@@ -63,10 +71,23 @@ if ($active_event) {
         .view-tab { padding: 8px 16px; border-radius: 20px; font-size: 13px; text-decoration: none; color: #6b7280; background: #f3f4f6; }
         .view-tab.active { background: #1f2937; color: white; }
 
+        /* Award Card Styles */
+        .award-card { background: white; border-radius: 8px; padding: 15px; margin-bottom: 10px; border: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center; }
+        .award-info h3 { margin: 0 0 5px 0; font-size: 16px; color: #111827; display: flex; align-items: center; gap: 10px; }
+        
+        .badge { padding: 2px 8px; border-radius: 4px; font-size: 11px; text-transform: uppercase; font-weight: bold; }
+        .badge-minor { background: #e0f2fe; color: #0284c7; }
+        .badge-major { background: #fef3c7; color: #d97706; }
+
+        .manual-tag, .audience-tag, .smart-tag { font-size: 12px; display: inline-flex; align-items: center; gap: 5px; padding: 4px 8px; border-radius: 4px; margin-top: 5px; }
+        .manual-tag { background: #f3f4f6; color: #4b5563; }
+        .audience-tag { background: #fae8ff; color: #86198f; }
+        .smart-tag { background: #dcfce7; color: #15803d; }
+
         .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; justify-content: center; align-items: center; z-index: 1000; }
         .modal-content { background: white; padding: 25px; width: 450px; border-radius: 12px; }
         .form-group { margin-bottom: 15px; }
-        .form-control { width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; }
+        .form-control { width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; box-sizing: border-box; }
     </style>
 </head>
 <body>

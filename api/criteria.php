@@ -29,7 +29,6 @@ function checkRoundLock($conn, $round_id) {
 
 // Logic: Ensure Total Segment Weights do not exceed 100%.
 function validateSegmentWeight($conn, $round_id, $new_weight, $exclude_segment_id = null) {
-    // UPDATED: Column 'weight_percent' and check 'is_deleted = 0'
     $sql = "SELECT SUM(weight_percent) as total FROM segments WHERE round_id = ? AND is_deleted = 0";
     if ($exclude_segment_id) $sql .= " AND id != $exclude_segment_id";
     
@@ -90,27 +89,24 @@ function validateUniqueOrder($conn, $type, $parent_id, $order, $exclude_id = nul
 // ADD SEGMENT
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_segment') {
     $round_id = (int)$_POST['round_id'];
-    checkRoundLock($conn, $round_id); // Security: Stop if Round is Locked
+    checkRoundLock($conn, $round_id); 
 
     $title    = trim($_POST['title']);
     $desc     = trim($_POST['description']);
     $weight   = (float)$_POST['weight_percentage']; 
     $order    = (int)$_POST['ordering'];
 
-    // VALIDATION: POSITIVE NUMBERS ONLY
     if ($weight <= 0) {
         header("Location: ../public/criteria.php?round_id=$round_id&error=Weight must be a positive number.");
         exit();
     }
 
-    // Validations: Check Math (Weight) and Display (Order)
     $checkW = validateSegmentWeight($conn, $round_id, $weight);
     if ($checkW !== true) { header("Location: ../public/criteria.php?round_id=$round_id&error=" . urlencode($checkW)); exit(); }
 
     $checkO = validateUniqueOrder($conn, 'segment', $round_id, $order);
     if ($checkO !== true) { header("Location: ../public/criteria.php?round_id=$round_id&error=" . urlencode($checkO)); exit(); }
 
-    // Insert Segment
     $stmt = $conn->prepare("INSERT INTO segments (round_id, title, description, weight_percent, ordering) VALUES (?, ?, ?, ?, ?)");
     if (!$stmt) die("Database Error: " . $conn->error);
     $stmt->bind_param("issdi", $round_id, $title, $desc, $weight, $order);
@@ -134,20 +130,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $weight   = (float)$_POST['weight_percentage'];
     $order    = (int)$_POST['ordering'];
 
-    // VALIDATION: POSITIVE NUMBERS ONLY
     if ($weight <= 0) {
         header("Location: ../public/criteria.php?round_id=$round_id&error=Weight must be a positive number.");
         exit();
     }
 
-    // Validations (passing $seg_id to exclude itself from checks)
     $checkW = validateSegmentWeight($conn, $round_id, $weight, $seg_id);
     if ($checkW !== true) { header("Location: ../public/criteria.php?round_id=$round_id&error=" . urlencode($checkW)); exit(); }
 
     $checkO = validateUniqueOrder($conn, 'segment', $round_id, $order, $seg_id);
     if ($checkO !== true) { header("Location: ../public/criteria.php?round_id=$round_id&error=" . urlencode($checkO)); exit(); }
 
-    // UPDATED: Column 'weight_percent'
     $stmt = $conn->prepare("UPDATE segments SET title=?, description=?, weight_percent=?, ordering=? WHERE id=?");
     $stmt->bind_param("ssdii", $title, $desc, $weight, $order, $seg_id);
 
@@ -159,13 +152,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     exit();
 }
 
-// DELETE SEGMENT (Soft Delete)
+// DELETE SEGMENT (Soft Delete - Fixed & Cascading)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_segment') {
     $id = (int)$_POST['segment_id'];
     $r_id = (int)$_POST['round_id'];
     
-    // We do NOT check round lock here in PHP because the DB Trigger 'guard_segment_deletion' will do it.
-    // However, keeping it for double safety is fine.
     checkRoundLock($conn, $r_id);
 
     // Safety: Check if scores exist before deleting
@@ -178,14 +169,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         exit();
     }
 
-    // UPDATED: Soft Delete to trigger the DB protection
-    $conn->query("UPDATE segments SET is_deleted = 1 WHERE id = $id");
+    // Use Prepared Statement
+    $stmt = $conn->prepare("UPDATE segments SET is_deleted = 1 WHERE id = ?");
+    $stmt->bind_param("i", $id);
     
-    // Check if the trigger blocked it
-    if ($conn->errno) {
-         header("Location: ../public/criteria.php?round_id=$r_id&error=Delete Denied: " . $conn->error);
+    if ($stmt->execute()) {
+         if ($stmt->affected_rows > 0) {
+             // UPDATE: Automatically soft-delete child criteria to keep data clean
+             $stmt_criteria = $conn->prepare("UPDATE criteria SET is_deleted = 1 WHERE segment_id = ?");
+             $stmt_criteria->bind_param("i", $id);
+             $stmt_criteria->execute();
+
+             header("Location: ../public/criteria.php?round_id=$r_id&success=Segment deleted");
+         } else {
+             // If affected_rows is 0, it means the ID wasn't found (or was already deleted)
+             header("Location: ../public/criteria.php?round_id=$r_id&error=Segment not found or already deleted");
+         }
     } else {
-         header("Location: ../public/criteria.php?round_id=$r_id&success=Segment deleted");
+         header("Location: ../public/criteria.php?round_id=$r_id&error=Delete Error: " . $stmt->error);
     }
     exit();
 }
@@ -204,13 +205,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $max_score  = (float)$_POST['max_score'];
     $order      = (int)$_POST['ordering'];
 
-    // VALIDATION: POSITIVE NUMBERS ONLY
     if ($max_score <= 0) {
         header("Location: ../public/criteria.php?round_id=$r_id&error=Max score must be a positive number.");
         exit();
     }
 
-    // Validations
     $checkS = validateCriteriaScore($conn, $segment_id, $max_score);
     if ($checkS !== true) { header("Location: ../public/criteria.php?round_id=$r_id&error=" . urlencode($checkS)); exit(); }
 
@@ -243,13 +242,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $max_score  = (float)$_POST['max_score'];
     $order      = (int)$_POST['ordering'];
 
-    // VALIDATION: POSITIVE NUMBERS ONLY
     if ($max_score <= 0) {
         header("Location: ../public/criteria.php?round_id=$r_id&error=Max score must be a positive number.");
         exit();
     }
 
-    // Validations
     $checkS = validateCriteriaScore($conn, $segment_id, $max_score, $crit_id);
     if ($checkS !== true) { header("Location: ../public/criteria.php?round_id=$r_id&error=" . urlencode($checkS)); exit(); }
 
@@ -267,7 +264,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     exit();
 }
 
-// DELETE CRITERIA (Soft Delete)
+// DELETE CRITERIA (Soft Delete - Fixed)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_criteria') {
     $id = (int)$_POST['criteria_id'];
     $r_id = (int)$_POST['round_id'];
@@ -282,13 +279,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         exit();
     }
     
-    // UPDATED: Soft Delete to trigger the DB protection
-    $conn->query("UPDATE criteria SET is_deleted = 1 WHERE id = $id");
-
-    if ($conn->errno) {
-         header("Location: ../public/criteria.php?round_id=$r_id&error=Delete Denied: " . $conn->error);
+    // Use Prepared Statement
+    $stmt = $conn->prepare("UPDATE criteria SET is_deleted = 1 WHERE id = ?");
+    $stmt->bind_param("i", $id);
+    
+    if ($stmt->execute()) {
+         if ($stmt->affected_rows > 0) {
+             header("Location: ../public/criteria.php?round_id=$r_id&success=Criteria deleted");
+         } else {
+             // If 0 rows affected, it means the ID was not found or was already 1.
+             header("Location: ../public/criteria.php?round_id=$r_id&error=Criteria not found or already deleted");
+         }
     } else {
-         header("Location: ../public/criteria.php?round_id=$r_id&success=Criteria deleted");
+         header("Location: ../public/criteria.php?round_id=$r_id&error=Delete Error: " . $stmt->error);
     }
     exit();
 }
