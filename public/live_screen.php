@@ -8,6 +8,7 @@ if (!in_array($_SESSION['role'], ['Event Manager', 'Tabulator', 'Judge Coordinat
 }
 
 require_once __DIR__ . '/../app/config/database.php';
+require_once __DIR__ . '/../app/models/ScoreCalculator.php'; // IMPORT THE BRAIN
 
 $uid = $_SESSION['user_id'];
 $event_title = "BPMS Live";
@@ -43,7 +44,7 @@ $rounds = $r_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
 // 3. AJAX Data Handler
 if (isset($_GET['fetch_rows']) && isset($_GET['round_id'])) {
-    $selected_round_id = $_GET['round_id'];
+    $selected_round_id = (int)$_GET['round_id'];
     $mode = $_GET['mode'] ?? 'list';
 
     // Get Round Details & STATUS
@@ -52,9 +53,8 @@ if (isset($_GET['fetch_rows']) && isset($_GET['round_id'])) {
     $rd_stmt->execute();
     $rd = $rd_stmt->get_result()->fetch_assoc();
     
-    $limit = $rd['qualify_count'];
+    $limit = (int)$rd['qualify_count'];
     $is_final = ($rd['type'] === 'Final');
-    $round_order = $rd['ordering'];
     $round_status = $rd['status'];
 
     // CHECK: IS ROUND LOCKED?
@@ -72,54 +72,63 @@ if (isset($_GET['fetch_rows']) && isset($_GET['round_id'])) {
         exit;
     }
 
-    $order_clause = ($mode === 'list') ? "ec.contestant_number ASC" : "final_score DESC";
-    $join_type = ($round_order == 1) ? "LEFT JOIN" : "INNER JOIN";
+    // --- USE THE CALCULATOR (THE TRUTH) ---
+    $rankings = ScoreCalculator::calculate($selected_round_id);
 
-    $sql = "
-        SELECT 
-            ec.id,
-            u.name, 
-            ec.photo, 
-            ec.contestant_number, 
-            COALESCE(AVG(judge_sub.judge_total), 0) as final_score
-        FROM event_contestants ec
-        JOIN users u ON ec.user_id = u.id
-        $join_type (
-            SELECT 
-                s.contestant_id,
-                s.judge_id,
-                SUM(s.score_value * (seg.weight_percent / 100.0)) as judge_total
-            FROM scores s
-            JOIN criteria c ON s.criteria_id = c.id
-            JOIN segments seg ON c.segment_id = seg.id
-            WHERE seg.round_id = ?
-            GROUP BY s.contestant_id, s.judge_id
-        ) judge_sub ON ec.id = judge_sub.contestant_id
-        WHERE ec.event_id = ? AND ec.is_deleted = 0
-        GROUP BY ec.id
-        ORDER BY $order_clause
-    ";
+    // --- OVERWRITE WITH FROZEN RESULTS IF COMPLETED ---
+    // This ensures that even if judges change scores after locking (which shouldn't happen, but just in case),
+    // the screen shows the OFFICIAL frozen result.
+    if ($round_status === 'Completed') {
+        $sql_saved = "SELECT contestant_id, total_score, `rank` FROM round_rankings WHERE round_id = $selected_round_id";
+        $saved_q = $conn->query($sql_saved);
+        
+        if ($saved_q && $saved_q->num_rows > 0) {
+            $saved_map = [];
+            while($row = $saved_q->fetch_assoc()) { 
+                $saved_map[$row['contestant_id']] = $row; 
+            }
 
-    $q_stmt = $conn->prepare($sql);
-    $q_stmt->bind_param("ii", $selected_round_id, $event_id);
-    $q_stmt->execute();
-    $rankings = $q_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+            foreach ($rankings as $key => $row) {
+                // Handle ID structure from Calculator
+                $cid = $row['contestant']['detail_id'] ?? $row['contestant']['id'] ?? $row['contestant_id'] ?? 0;
+                
+                if (isset($saved_map[$cid])) {
+                    $rankings[$key]['final_score'] = number_format($saved_map[$cid]['total_score'], 2);
+                    $rankings[$key]['rank'] = (int)$saved_map[$cid]['rank'];
+                }
+            }
+            
+            // Re-sort based on frozen rank
+            usort($rankings, function($a, $b) { 
+                $rA = ($a['rank'] > 0) ? $a['rank'] : 9999;
+                $rB = ($b['rank'] > 0) ? $b['rank'] : 9999;
+                return $rA <=> $rB; 
+            });
+        }
+    }
+
+    // --- IF MODE IS 'LIST', RE-SORT ALPHABETICALLY BY NUMBER ---
+    if ($mode === 'list') {
+        usort($rankings, function($a, $b) {
+            return $a['contestant']['contestant_number'] <=> $b['contestant']['contestant_number'];
+        });
+    }
 
     if (empty($rankings)) {
         echo "<tr><td colspan='3' style='text-align:center; padding:50px; color:#999; font-size:1.5em;'>No contestants found for this round.</td></tr>";
     } else {
-        $rank = 1;
         foreach($rankings as $row) {
-            $score = number_format($row['final_score'], 2);
-            $name = htmlspecialchars($row['name']);
-            $num = $row['contestant_number'];
-            $photo = htmlspecialchars($row['photo']);
+            $score = number_format((float)$row['final_score'], 2);
+            $name = htmlspecialchars($row['contestant']['name']);
+            $num = $row['contestant']['contestant_number'];
+            $photo = htmlspecialchars($row['contestant']['photo']);
+            $rank = $row['rank'];
             
             // --- LOGIC: Highlight Winners ---
             $rowClass = "";
             
             if ($mode === 'rank') {
-                if ($rank <= $limit) {
+                if ($rank <= $limit && $rank > 0) {
                     if ($is_final && $rank == 1) {
                         $rowClass = "row-winner"; 
                     } else {
@@ -157,7 +166,6 @@ if (isset($_GET['fetch_rows']) && isset($_GET['round_id'])) {
 
             echo "  </td>
                   </tr>";
-            $rank++;
         }
     }
     exit; 
