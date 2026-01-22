@@ -96,7 +96,27 @@ $stmt->bind_param("i", $user_id);
 $stmt->execute();
 $data = $stmt->get_result()->fetch_assoc();
 
-if ($data['event_status'] === 'Inactive') die("Access Restricted: Event is inactive.");
+// If the event is NOT Active (e.g. Inactive, Deleted, or Completed), log them out immediately.
+if ($data['event_status'] !== 'Active') {
+    // 1. Clear all session variables
+    $_SESSION = [];
+
+    // 2. Destroy the session cookie
+    if (ini_get("session.use_cookies")) {
+        $params = session_get_cookie_params();
+        setcookie(session_name(), '', time() - 42000,
+            $params["path"], $params["domain"],
+            $params["secure"], $params["httponly"]
+        );
+    }
+
+    // 3. Destroy the session storage
+    session_destroy();
+
+    // 4. Redirect to login with a clear explanation
+    header("Location: index.php?error=" . urlencode("You were logged out because the event is no longer active."));
+    exit();
+}
 
 // 4. FETCH SCHEDULE
 $activities = [];

@@ -38,11 +38,22 @@ if ($active_event) {
     $archived = $conn->query($sql_arc)->fetch_all(MYSQLI_ASSOC);
 
     // Fetch Segments (For Dropdown)
-    $seg_sql = "SELECT s.id, s.title, r.title as round_title FROM segments s JOIN rounds r ON s.round_id = r.id WHERE r.event_id = $event_id ORDER BY r.ordering, s.ordering";
+    // FIX APPLIED: Added check for 's.is_deleted = 0' AND 'r.is_deleted = 0'
+    $seg_sql = "SELECT s.id, s.title, r.title as round_title 
+                FROM segments s 
+                JOIN rounds r ON s.round_id = r.id 
+                WHERE r.event_id = $event_id 
+                AND s.is_deleted = 0 
+                AND r.is_deleted = 0 
+                ORDER BY r.ordering, s.ordering";
     $segments = $conn->query($seg_sql)->fetch_all(MYSQLI_ASSOC);
 
     // Fetch Rounds (For Dropdown)
-    $rnd_sql = "SELECT id, title FROM rounds WHERE event_id = $event_id ORDER BY ordering";
+    // FIX APPLIED: Added 'AND is_deleted = 0' to prevent deleted rounds from showing up
+    $rnd_sql = "SELECT id, title FROM rounds 
+                WHERE event_id = $event_id 
+                AND is_deleted = 0 
+                ORDER BY ordering";
     $rounds = $conn->query($rnd_sql)->fetch_all(MYSQLI_ASSOC);
 }
 ?>
